@@ -1,0 +1,19 @@
+services:
+  enclave:
+    build: .
+    container_name: zkai-enclave
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist downloaded models so they survive container restarts
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_MODEL=qwen2.5:1.5b
+      - GRAMINE_MODE=direct
+      - MAX_TOKENS=512
+      - HOST=0.0.0.0
+      - PORT=8080
+    restart: unless-stopped
+
+volumes:
+  ollama_models:

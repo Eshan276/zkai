@@ -1,0 +1,6 @@
+cryptography>=43.0
+requests>=2.32
+pydantic>=2.9
+
+[langchain]
+langchain-core>=0.3

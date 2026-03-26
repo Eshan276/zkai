@@ -1,0 +1,58 @@
+// ZKai — Attestation Registry Contract
+// Midnight Compact language
+// Providers post attestation hashes on-chain.
+// Users and SDK verify inference was run on the correct, unmodified model.
+
+pragma language_version >= 0.14.0;
+
+import CompactStandardLibrary;
+
+// ── Data types ───────────────────────────────────────────────────────────────
+
+struct AttestationRecord {
+    provider_id:      Bytes<32>,
+    job_id:           Bytes<32>,
+    attestation_hash: Bytes<32>,   // SHA256 of full attestation report
+    model_hash:       Bytes<32>,   // SHA256 of model weights (from report)
+    block_height:     Uint<64>,
+}
+
+// ── Ledger state ─────────────────────────────────────────────────────────────
+
+ledger attestations: Map<Bytes<32>, AttestationRecord>;  // job_id → record
+// Track approved model hashes — governance can add/remove
+ledger approved_models: Map<Bytes<32>, Boolean>;
+
+// ── Circuits ─────────────────────────────────────────────────────────────────
+
+export circuit postAttestation(
+    job_id:           Bytes<32>,
+    attestation_hash: Bytes<32>,
+    model_hash:       Bytes<32>,
+): [] {
+    assert !attestations.member(job_id) "Attestation already posted for this job";
+
+    // Optionally enforce only approved model hashes
+    // assert approved_models.lookup(model_hash) "Model not approved";
+
+    attestations.insert(job_id, AttestationRecord {
+        provider_id:      own_public_key(),  // provider is the caller
+        job_id:           job_id,
+        attestation_hash: attestation_hash,
+        model_hash:       model_hash,
+        block_height:     current_block(),
+    });
+}
+
+export circuit getAttestation(job_id: Bytes<32>): AttestationRecord {
+    return attestations.lookup(job_id);
+}
+
+export circuit approveModel(model_hash: Bytes<32>): [] {
+    // TODO Phase 4: restrict to governance/multisig
+    approved_models.insert(model_hash, true);
+}
+
+export circuit revokeModel(model_hash: Bytes<32>): [] {
+    approved_models.insert(model_hash, false);
+}

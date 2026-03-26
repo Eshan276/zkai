@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zkai"
+version = "0.1.0"
+description = "Private AI inference on Midnight chain — drop-in OpenAI replacement"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=43.0",
+    "requests>=2.32",
+    "pydantic>=2.9",
+]
+
+[project.optional-dependencies]
+langchain = [
+    "langchain-core>=0.3",
+]
+
+[project.scripts]
+zkai-provider = "zkai.provider_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]

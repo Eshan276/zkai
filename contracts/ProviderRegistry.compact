@@ -1,0 +1,84 @@
+// ZKai — Provider Registry Contract
+// Midnight Compact language
+// Providers stake DUST and register their TEE endpoint + pubkey.
+// Anyone can read the registry. Only the provider can deregister.
+
+pragma language_version >= 0.14.0;
+
+import CompactStandardLibrary;
+
+// ── Data types ───────────────────────────────────────────────────────────────
+
+struct Provider {
+    owner:      Bytes<32>,   // provider's Midnight address
+    pubkey:     Bytes<32>,   // TEE X25519 public key
+    endpoint:   Bytes<128>,  // provider URL (UTF-8 encoded)
+    model:      Bytes<32>,   // model identifier e.g. "qwen2.5-1.5b"
+    stake:      Uint<64>,    // DUST staked (in micro-DUST)
+    price:      Uint<32>,    // micro-DUST per token
+    reputation: Uint<32>,    // 0–1000000 (6 decimal places)
+    active:     Boolean,
+}
+
+// ── Ledger state ─────────────────────────────────────────────────────────────
+
+ledger providers: Map<Bytes<32>, Provider>;   // provider_id → Provider
+ledger provider_count: Counter;
+ledger min_stake: Uint<64>;                   // governance can update
+
+// ── Circuits ─────────────────────────────────────────────────────────────────
+
+export circuit registerProvider(
+    provider_id: Bytes<32>,
+    pubkey:      Bytes<32>,
+    endpoint:    Bytes<128>,
+    model:       Bytes<32>,
+    price:       Uint<32>,
+): [] {
+    // Provider must not already exist
+    assert !providers.member(provider_id) "Provider already registered";
+
+    // Stake must meet minimum (sent with transaction as DUST)
+    const stake = own_public_key();  // placeholder — real impl uses tx.value
+    assert stake >= min_stake "Insufficient stake";
+
+    providers.insert(provider_id, Provider {
+        owner:      own_public_key(),
+        pubkey:     pubkey,
+        endpoint:   endpoint,
+        model:      model,
+        stake:      stake,
+        price:      price,
+        reputation: 500000,  // start at 0.5 reputation
+        active:     true,
+    });
+
+    provider_count.increment(1);
+}
+
+export circuit deregisterProvider(provider_id: Bytes<32>): [] {
+    const p = providers.lookup(provider_id);
+    assert p.owner == own_public_key() "Only owner can deregister";
+    assert p.active "Already inactive";
+
+    // Mark inactive and return stake
+    providers.insert(provider_id, Provider { ...p, active: false });
+    // TODO: transfer p.stake back to owner via DUST ledger
+}
+
+export circuit updateReputation(
+    provider_id: Bytes<32>,
+    delta:       Int<32>,   // positive = good job, negative = dispute lost
+): [] {
+    // In Phase 4: only callable by ReputationContract
+    // For now: placeholder
+    const p = providers.lookup(provider_id);
+    // Clamp reputation to [0, 1000000]
+    const new_rep = clamp(p.reputation + delta, 0, 1000000);
+    providers.insert(provider_id, Provider { ...p, reputation: new_rep });
+}
+
+// Read-only helpers (called by SDK to find providers)
+export circuit getProvider(provider_id: Bytes<32>): Provider {
+    return providers.lookup(provider_id);
+}

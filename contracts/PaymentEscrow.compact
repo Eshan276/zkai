@@ -1,0 +1,91 @@
+// ZKai — Payment Escrow Contract
+// Midnight Compact language
+// User locks DUST before inference. Provider claims after job is done.
+// All balances are shielded — Midnight handles ZK automatically for DUST.
+
+pragma language_version >= 0.14.0;
+
+import CompactStandardLibrary;
+
+// ── Data types ───────────────────────────────────────────────────────────────
+
+enum JobStatus { Pending, Completed, Disputed, Refunded }
+
+struct Job {
+    user:              Bytes<32>,   // user's shielded address
+    provider_id:       Bytes<32>,
+    amount:            Uint<64>,    // DUST locked in escrow
+    attestation_hash:  Bytes<32>,   // set by provider on completion
+    status:            JobStatus,
+    created_at:        Uint<64>,    // block height
+    timeout_blocks:    Uint<32>,    // blocks before user can force-refund
+}
+
+// ── Ledger state ─────────────────────────────────────────────────────────────
+
+ledger jobs: Map<Bytes<32>, Job>;   // job_id → Job
+ledger job_nonce: Counter;          // monotonic counter for job IDs
+ledger dispute_timeout: Uint<32>;   // default 100 blocks (~30 min)
+
+// ── Circuits ─────────────────────────────────────────────────────────────────
+
+export circuit createJob(
+    job_id:      Bytes<32>,
+    provider_id: Bytes<32>,
+    amount:      Uint<64>,
+): [] {
+    assert !jobs.member(job_id) "Job ID already exists";
+    assert amount > 0 "Amount must be positive";
+
+    // DUST is locked in shielded escrow here (Midnight handles actual transfer)
+    jobs.insert(job_id, Job {
+        user:             own_public_key(),
+        provider_id:      provider_id,
+        amount:           amount,
+        attestation_hash: pad(0, 32),
+        status:           JobStatus.Pending,
+        created_at:       current_block(),
+        timeout_blocks:   dispute_timeout,
+    });
+}
+
+export circuit completeJob(
+    job_id:           Bytes<32>,
+    attestation_hash: Bytes<32>,
+): [] {
+    const job = jobs.lookup(job_id);
+
+    assert job.status == JobStatus.Pending "Job not in pending state";
+
+    // TODO Phase 3: verify caller is the registered provider for job.provider_id
+    // assert caller_is_provider(job.provider_id)
+
+    jobs.insert(job_id, Job {
+        ...job,
+        attestation_hash: attestation_hash,
+        status:           JobStatus.Completed,
+    });
+
+    // Release DUST to provider (shielded transfer)
+    // TODO: midnight-js DUST transfer to provider's shielded address
+}
+
+export circuit disputeJob(job_id: Bytes<32>): [] {
+    const job = jobs.lookup(job_id);
+
+    assert job.status == JobStatus.Pending "Can only dispute pending jobs";
+    assert job.user == own_public_key() "Only job creator can dispute";
+
+    const blocks_passed = current_block() - job.created_at;
+    // User can dispute immediately on attestation failure, or after timeout
+    // For now: allow dispute anytime (Phase 4: add ZK proof of bad attestation)
+
+    jobs.insert(job_id, Job { ...job, status: JobStatus.Refunded });
+
+    // Refund DUST to user (shielded transfer)
+    // TODO: midnight-js DUST refund to job.user shielded address
+}
+
+export circuit getJob(job_id: Bytes<32>): Job {
+    return jobs.lookup(job_id);
+}

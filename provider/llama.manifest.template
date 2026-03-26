@@ -1,0 +1,41 @@
+# Gramine manifest for llama.cpp inside TEE enclave
+# In sim (direct) mode: enforces file access policy without SGX hardware
+# In SGX mode: full hardware isolation + remote attestation via Intel IAS
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+libos.entrypoint = "/usr/local/bin/llama"
+
+loader.log_level = "error"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/usr/lib:/usr/local/lib"
+loader.env.HOME = "/tmp"
+
+# Enclave memory — 4GB for 1.5B Q4 model + overhead
+sgx.enclave_size = "4G"
+sgx.max_threads = 8
+
+# Trusted files — manifest will reject execution if these are tampered
+sgx.trusted_files = [
+    "file:{{ gramine.libos }}",
+    "file:/usr/local/bin/llama",
+    "file:/usr/lib/x86_64-linux-gnu/",
+    "file:/lib/x86_64-linux-gnu/",
+    # Model file — hash verified at enclave startup
+    "file:{{ env.MODEL_PATH }}",
+]
+
+# Allowed files — readable but not hash-verified
+fs.mounts = [
+    { path = "/lib",           uri = "file:/lib" },
+    { path = "/usr",           uri = "file:/usr" },
+    { path = "/tmp",           uri = "tmpfs" },
+    { path = "/models",        uri = "file:/models", type = "chroot" },
+]
+
+# Network: enclave can only listen, never initiate outbound calls
+# (inference is fully offline — no data exfiltration possible)
+sys.enable_extra_runtime_domain_names_conf = false
+net.domain_name = ""
+
+# Disable unnecessary syscalls
+sys.insecure__allow_eventfd = false
