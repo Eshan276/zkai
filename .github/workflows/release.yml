@@ -34,24 +34,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+
+          # Write release notes to a file to avoid YAML/heredoc quoting issues
+          cat > /tmp/release-notes.md << NOTES
+          ## Install
+
+          \`\`\`bash
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+          \`\`\`
+
+          Or download \`zkai-${VERSION}.pyz\` directly from this release and run:
+          \`\`\`bash
+          python3 zkai-${VERSION}.pyz --help
+          \`\`\`
+
+          ## Requirements
+          - Python 3.9+
+          - Docker + Docker Compose
+          NOTES
+
           gh release create "$GITHUB_REF_NAME" \
             --title "ZKai CLI v${VERSION}" \
-            --notes "$(cat <<'EOF'
-## Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
-```
-
-Or download [zkai-${VERSION}.pyz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/zkai-${VERSION}.pyz) and run directly:
-```bash
-python3 zkai-${VERSION}.pyz --help
-```
-
-## Requirements
-- Python 3.9+
-- Docker + Docker Compose (for provider node operations)
-EOF
-)" \
+            --notes-file /tmp/release-notes.md \
             "dist/zkai-${VERSION}.pyz" \
             "dist/zkai.pyz"
