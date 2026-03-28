@@ -28,8 +28,13 @@ jobs:
 
       - name: Build zipapp
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"   # strip leading 'v' from tag
+          VERSION="${GITHUB_REF_NAME#v}"
           bash scripts/build-release.sh "$VERSION"
+
+      - name: Bundle compiled contract artifacts
+        run: |
+          tar -czf dist/compiled.tar.gz -C deploy compiled
+          echo "compiled.tar.gz size: $(du -sh dist/compiled.tar.gz | cut -f1)"
 
       - name: Upload release assets
         env:
@@ -37,11 +42,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
 
-          # Upload assets — create the release if it doesn't exist yet, otherwise just upload
           if gh release view "$GITHUB_REF_NAME" &>/dev/null; then
             gh release upload "$GITHUB_REF_NAME" \
               "dist/zkai-${VERSION}.pyz" \
               "dist/zkai.pyz" \
+              "dist/compiled.tar.gz" \
               --clobber
           else
             cat > /tmp/release-notes.md << NOTES
@@ -64,5 +69,6 @@ jobs:
               --title "ZKai CLI v${VERSION}" \
               --notes-file /tmp/release-notes.md \
               "dist/zkai-${VERSION}.pyz" \
-              "dist/zkai.pyz"
+              "dist/zkai.pyz" \
+              "dist/compiled.tar.gz"
           fi

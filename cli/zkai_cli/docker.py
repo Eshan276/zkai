@@ -1,7 +1,9 @@
 """Docker Compose operations: start, stop, restart, logs, status."""
 
 import subprocess
+import tarfile
 import time
+import urllib.request
 from pathlib import Path
 
 import requests
@@ -11,11 +13,14 @@ from rich.table import Table
 from rich import box
 
 from zkai_cli.util import (
-    compose_dir, console, err_console, find_repo_root, ensure_repo,
+    compose_dir, deploy_dir, console, err_console, find_repo_root, ensure_repo,
     require_docker, run, stream,
 )
 
 SERVICES = ("enclave", "bridge")
+
+GITHUB_REPO = "Eshan276/zkai"
+COMPILED_ASSET = "compiled.tar.gz"
 
 
 def _compose(repo: Path, *args: str, stream_output: bool = True) -> subprocess.CompletedProcess:
@@ -33,6 +38,8 @@ def start(repo_dir: str | None, build: bool = False, follow: bool = False):
     require_docker()
     repo = ensure_repo(repo_dir)
     cwd = compose_dir(repo)
+
+    _ensure_compiled_artifacts(repo)
 
     if build:
         console.print("[bold]Building enclave image...[/bold]")
@@ -190,3 +197,57 @@ def _resolve_service(service: str | None) -> list[str]:
         err_console.print(f"[red]Unknown service '{service}'.[/red] Choose: {', '.join(SERVICES)}")
         raise typer.Exit(1)
     return [s]
+
+
+# ── compiled artifact bootstrap ───────────────────────────────────────────────
+
+def _ensure_compiled_artifacts(repo: Path):
+    """Download and extract compiled.tar.gz from the latest release if deploy/compiled/ is missing."""
+    compiled = deploy_dir(repo) / "compiled"
+    marker = compiled / "ProviderRegistry" / "contract" / "index.js"
+    if marker.exists():
+        return  # already present
+
+    console.print("[bold]Compiled contract artifacts not found — downloading from release...[/bold]")
+
+    url = _get_compiled_download_url()
+    if not url:
+        err_console.print(
+            "[red]Could not find compiled.tar.gz in the latest release.[/red]\n"
+            "Check https://github.com/Eshan276/zkai/releases or run the deploy script manually."
+        )
+        raise typer.Exit(1)
+
+    console.print(f"  Downloading {url} ...")
+    tmp = repo / ".build-tmp" / COMPILED_ASSET
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        urllib.request.urlretrieve(url, tmp)
+    except Exception as e:
+        err_console.print(f"[red]Download failed:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print("  Extracting...")
+    compiled.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(tmp, "r:gz") as tf:
+        # Archive is: compiled/<contract>/... — extract one level into deploy/
+        tf.extractall(deploy_dir(repo))
+
+    tmp.unlink(missing_ok=True)
+    console.print("[green]Compiled artifacts ready.[/green]")
+
+
+def _get_compiled_download_url() -> str | None:
+    """Fetch the compiled.tar.gz download URL from the latest GitHub release."""
+    import json
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    try:
+        with urllib.request.urlopen(api_url, timeout=10) as resp:
+            data = json.loads(resp.read())
+        for asset in data.get("assets", []):
+            if asset["name"] == COMPILED_ASSET:
+                return asset["browser_download_url"]
+    except Exception:
+        pass
+    return None
