@@ -1,24 +1,11 @@
 services:
-  enclave:
-    build: .
-    container_name: zkai-enclave
+  proof-server:
+    image: midnightnetwork/proof-server:latest
+    container_name: zkai-proof-server
     ports:
-      - "8080:8080"
-    volumes:
-      - ollama_models:/root/.ollama
+      - "6300:6300"
     environment:
-      - OLLAMA_MODEL=qwen2.5:1.5b
-      - GRAMINE_MODE=direct
-      - MAX_TOKENS=512
-      - HOST=0.0.0.0
-      - PORT=8080
-      # Bridge sidecar URL — enclave posts attestations here after each job
-      - ZKAI_BRIDGE_URL=http://bridge:7300
-      # API keys — comma-separated list of valid keys (or set ZKAI_API_KEYS_FILE)
-      - ZKAI_API_KEYS=${ZKAI_API_KEYS:-}
-    depends_on:
-      bridge:
-        condition: service_healthy
+      - PORT=6300
     restart: unless-stopped
 
   bridge:
@@ -34,18 +21,45 @@ services:
       - bridge_leveldb:/app/midnight-level-db
     environment:
       - BRIDGE_PORT=7300
-      - PROOF_SERVER_URL=http://host.docker.internal:6300
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - PROOF_SERVER_URL=http://proof-server:6300
     ports:
       - "7300:7300"
-    command: sh -c "npm install --silent && npx tsx src/server.ts"
+    command: >
+      sh -c "
+        npm install --silent &&
+        echo 'Waiting for proof server on proof-server:6300...' &&
+        until (echo > /dev/tcp/proof-server/6300) 2>/dev/null; do sleep 2; done &&
+        echo 'Proof server ready.' &&
+        npx tsx src/server.ts
+      "
+    depends_on:
+      - proof-server
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7300/health"]
       interval: 10s
       timeout: 5s
       retries: 30
       start_period: 300s  # wallet sync can take up to 5 min
+    restart: unless-stopped
+
+  enclave:
+    build: .
+    container_name: zkai-enclave
+    ports:
+      - "8080:8080"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_MODEL=qwen2.5:1.5b
+      - GRAMINE_MODE=direct
+      - MAX_TOKENS=512
+      - HOST=0.0.0.0
+      - PORT=8080
+      - ZKAI_BRIDGE_URL=http://bridge:7300
+      - ZKAI_API_KEYS=${ZKAI_API_KEYS:-}
+    depends_on:
+      bridge:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
