@@ -6,6 +6,8 @@ services:
       - "6300:6300"
     environment:
       - PORT=6300
+    volumes:
+      - proof_server_keys:/.cache/midnight/zk-params
     restart: unless-stopped
 
   bridge:
@@ -65,3 +67,4 @@ services:
 volumes:
   ollama_models:
   bridge_leveldb:
+  proof_server_keys:
