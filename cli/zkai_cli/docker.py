@@ -34,7 +34,7 @@ def _compose(repo: Path, *args: str, stream_output: bool = True) -> subprocess.C
 
 # ── start ─────────────────────────────────────────────────────────────────────
 
-def start(repo_dir: str | None, build: bool = False, follow: bool = False):
+def start(repo_dir: str | None, build: bool = False, follow: bool = False, tunnel: bool = False):
     require_docker()
     repo = ensure_repo(repo_dir)
     cwd = compose_dir(repo)
@@ -46,14 +46,46 @@ def start(repo_dir: str | None, build: bool = False, follow: bool = False):
         stream(["docker", "compose", "build", "enclave"], cwd=cwd)
 
     console.print("[bold]Starting ZKai containers...[/bold]")
-    stream(["docker", "compose", "up", "-d"], cwd=cwd)
+    cmd = ["docker", "compose"]
+    if tunnel:
+        cmd += ["--profile", "tunnel"]
+    cmd += ["up", "-d"]
+    stream(cmd, cwd=cwd)
     console.print()
     console.print("[green]Containers started.[/green] Bridge wallet sync takes 2-5 minutes on first boot.")
+    if tunnel:
+        console.print("Tunnel starting... run [bold]zkai tunnel-url[/bold] in ~5 seconds to get your public URL.")
     console.print("Run [bold]zkai status[/bold] to check progress.")
     console.print("Run [bold]zkai logs[/bold] to watch logs.")
 
     if follow:
         logs(repo_dir, service=None, lines=30, follow=True)
+
+
+def print_tunnel_url():
+    """Extract and print the trycloudflare.com URL from tunnel logs."""
+    import re
+    result = subprocess.run(
+        ["docker", "logs", "zkai-tunnel", "--tail=50"],
+        capture_output=True, text=True,
+    )
+    output = result.stdout + result.stderr
+    # cloudflared prints the URL to stderr
+    match = re.search(r'https://[a-z0-9\-]+\.trycloudflare\.com', output)
+    if match:
+        url = match.group(0)
+        console.print(f"\n[green]Tunnel URL:[/green] [bold]{url}[/bold]\n")
+        console.print(f"Use this as your endpoint:")
+        console.print(f"  [cyan]zkai register --endpoint {url}[/cyan]")
+    else:
+        # Check if container exists at all
+        exists = subprocess.run(["docker", "inspect", "zkai-tunnel"], capture_output=True)
+        if exists.returncode != 0:
+            err_console.print("[yellow]Tunnel not running.[/yellow] Start with: [bold]zkai start --tunnel[/bold]")
+        else:
+            console.print("[yellow]URL not found yet — tunnel may still be starting.[/yellow] Wait a few seconds and retry.")
+            console.print("[dim]Raw logs:[/dim]")
+            console.print(output[-500:] if len(output) > 500 else output)
 
 
 # ── stop ──────────────────────────────────────────────────────────────────────

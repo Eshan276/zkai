@@ -64,6 +64,40 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── Optional: Cloudflare Tunnel ──────────────────────────────────────────
+  # Gives a public HTTPS endpoint (*.trycloudflare.com) without opening
+  # firewall ports or needing a static IP.
+  #
+  # Enable:  zkai start --tunnel
+  #      or: docker compose --profile tunnel up -d
+  #
+  # After starting, run:  zkai tunnel-url
+  #                   or: docker logs zkai-tunnel 2>&1 | grep trycloudflare
+  # Copy the https://xxxxx.trycloudflare.com URL and use it as your endpoint:
+  #   zkai register --endpoint https://xxxxx.trycloudflare.com
+  #
+  # Note: trycloudflare.com URLs are temporary and change on each restart.
+  # For a permanent URL, set CLOUDFLARE_TUNNEL_TOKEN (from Cloudflare dashboard).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: zkai-tunnel
+    profiles: ["tunnel"]
+    # Without CLOUDFLARE_TUNNEL_TOKEN: quick tunnel (temporary trycloudflare.com URL)
+    # With CLOUDFLARE_TUNNEL_TOKEN: named tunnel (permanent custom domain)
+    command: >
+      sh -c "
+        if [ -n \"$$CLOUDFLARE_TUNNEL_TOKEN\" ]; then
+          cloudflared tunnel --no-autoupdate run --token $$CLOUDFLARE_TUNNEL_TOKEN;
+        else
+          cloudflared tunnel --no-autoupdate --url http://enclave:8080;
+        fi
+      "
+    environment:
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - enclave
+    restart: unless-stopped
+
 volumes:
   ollama_models:
   bridge_leveldb:
