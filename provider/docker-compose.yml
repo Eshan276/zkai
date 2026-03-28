@@ -82,18 +82,10 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: zkai-tunnel
     profiles: ["tunnel"]
-    # Without CLOUDFLARE_TUNNEL_TOKEN: quick tunnel (temporary trycloudflare.com URL)
-    # With CLOUDFLARE_TUNNEL_TOKEN: named tunnel (permanent custom domain)
-    command: >
-      sh -c "
-        if [ -n \"$$CLOUDFLARE_TUNNEL_TOKEN\" ]; then
-          cloudflared tunnel --no-autoupdate run --token $$CLOUDFLARE_TUNNEL_TOKEN;
-        else
-          cloudflared tunnel --no-autoupdate --url http://enclave:8080;
-        fi
-      "
-    environment:
-      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    # Quick tunnel (no account): temporary https://*.trycloudflare.com URL
+    # Named tunnel (permanent): set CLOUDFLARE_TUNNEL_TOKEN in provider/.env
+    #   and change command to: tunnel --no-autoupdate run --token $CLOUDFLARE_TUNNEL_TOKEN
+    command: tunnel --no-autoupdate --url http://enclave:8080
     depends_on:
       - enclave
     restart: unless-stopped
