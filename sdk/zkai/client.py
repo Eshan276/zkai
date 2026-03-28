@@ -40,6 +40,7 @@ class ZKai:
     def __init__(
         self,
         api_key: str | None = None,
+        provider_endpoint: str | None = None,
         max_price: float | None = None,
         min_reputation: float = 0.0,
         registry_contract: str | None = None,
@@ -47,6 +48,7 @@ class ZKai:
         skip_attestation: bool = False,
     ):
         self._api_key = api_key
+        self._provider_endpoint = provider_endpoint
         self._max_price = max_price
         self._min_reputation = min_reputation
         self._registry_contract = registry_contract
@@ -58,13 +60,24 @@ class ZKai:
         # 1. Build prompt
         prompt = _messages_to_prompt(messages)
 
-        # 2. Pick provider from on-chain registry (or local stub)
-        p = provider_mod.select_provider(
-            model=model,
-            max_price=self._max_price,
-            min_reputation=self._min_reputation,
-            registry_contract=self._registry_contract,
-        )
+        # 2. Pick provider — direct endpoint overrides registry lookup
+        if self._provider_endpoint:
+            p = provider_mod.Provider(
+                id="direct",
+                endpoint=self._provider_endpoint,
+                pubkey="",
+                model=model,
+                price_per_token=0.0,
+                reputation=1.0,
+                stake=0.0,
+            )
+        else:
+            p = provider_mod.select_provider(
+                model=model,
+                max_price=self._max_price,
+                min_reputation=self._min_reputation,
+                registry_contract=self._registry_contract,
+            )
 
         # 3. Fetch live TEE pubkey
         tee_pubkey = provider_mod.fetch_pubkey(p)
