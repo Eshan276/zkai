@@ -11,7 +11,7 @@ from rich.table import Table
 from rich import box
 
 from zkai_cli.util import (
-    compose_dir, console, err_console, find_repo_root,
+    compose_dir, console, err_console, find_repo_root, ensure_repo,
     require_docker, run, stream,
 )
 
@@ -31,7 +31,7 @@ def _compose(repo: Path, *args: str, stream_output: bool = True) -> subprocess.C
 
 def start(repo_dir: str | None, build: bool = False, follow: bool = False):
     require_docker()
-    repo = find_repo_root(repo_dir)
+    repo = ensure_repo(repo_dir)
     cwd = compose_dir(repo)
 
     if build:
