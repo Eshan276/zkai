@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zkai-cli"
+version = "0.1.0"
+description = "ZKai provider CLI — setup, register, and manage your ZKai node"
+requires-python = ">=3.9"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "requests>=2.31",
+]
+
+[project.scripts]
+zkai = "zkai_cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["zkai_cli"]

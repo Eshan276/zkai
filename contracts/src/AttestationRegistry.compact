@@ -1,0 +1,33 @@
+pragma language_version 0.22;
+
+import CompactStandardLibrary;
+
+// ZKai Attestation Registry
+// Providers post attestation hashes on-chain.
+// SDK verifies inference was run on the correct, unmodified model.
+
+export ledger att_hash:     Map<Bytes<32>, Bytes<32>>;
+export ledger att_model:    Map<Bytes<32>, Bytes<32>>;
+export ledger att_provider: Map<Bytes<32>, Bytes<32>>;
+export ledger approved_models: Map<Bytes<32>, Boolean>;
+
+export circuit postAttestation(
+  job_id:           Bytes<32>,
+  attestation_hash: Bytes<32>,
+  model_hash:       Bytes<32>
+): [] {
+  const pub_job_id = disclose(job_id);
+  assert(att_hash.member(pub_job_id) == false, "Attestation already posted");
+
+  att_hash.insert(pub_job_id, disclose(attestation_hash));
+  att_model.insert(pub_job_id, disclose(model_hash));
+  att_provider.insert(pub_job_id, ownPublicKey().bytes);
+}
+
+export circuit approveModel(model_hash: Bytes<32>): [] {
+  approved_models.insert(disclose(model_hash), true);
+}
+
+export circuit revokeModel(model_hash: Bytes<32>): [] {
+  approved_models.insert(disclose(model_hash), false);
+}

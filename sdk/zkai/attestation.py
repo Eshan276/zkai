@@ -7,16 +7,24 @@ import hashlib
 import json
 import requests
 
+INDEXER_URL = "https://indexer.preprod.midnight.network/api/v3/graphql"
+
 
 class ZKaiAttestationError(Exception):
     pass
 
 
-def verify(provider_url: str, received_attestation_hash: str, on_chain_hash: str | None = None):
+def verify(
+    provider_url: str,
+    received_attestation_hash: str,
+    on_chain_hash: str | None = None,
+    attestation_contract: str | None = None,
+    job_id: str | None = None,
+):
     """
     Fetch attestation from provider, hash it, compare to:
     1. The hash included in the /infer response
-    2. The hash anchored on-chain (when contracts are live)
+    2. The hash anchored on-chain (if attestation_contract + job_id provided)
 
     Raises ZKaiAttestationError if anything doesn't match.
     """
@@ -37,13 +45,58 @@ def verify(provider_url: str, received_attestation_hash: str, on_chain_hash: str
             f"  Provider may have tampered with the report."
         )
 
+    # Fetch on-chain hash if not provided directly
+    if on_chain_hash is None and attestation_contract and job_id:
+        on_chain_hash = _fetch_on_chain_hash(attestation_contract, job_id)
+
     if on_chain_hash and computed_hash != on_chain_hash:
         raise ZKaiAttestationError(
             f"Attestation does not match on-chain anchor.\n"
             f"  On-chain:   {on_chain_hash}\n"
             f"  Computed:   {computed_hash}\n"
             f"  Model hash: {attestation.get('model_hash', 'unknown')}\n"
-            f"  Expected a different model or manifest was used."
+            f"  Possible tampered model or manifest."
         )
 
     return attestation
+
+
+def _fetch_on_chain_hash(attestation_contract: str, job_id: str) -> str | None:
+    """Query Midnight indexer for the attestation hash stored for a given job_id."""
+    query = """
+    query GetAttestation($address: String!) {
+      contract(address: $address) {
+        state {
+          ... on ContractState {
+            ledger {
+              ... on ZkaiAttestationRegistryLedger {
+                att_hash { entries { key value } }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    try:
+        resp = requests.post(
+            INDEXER_URL,
+            json={"query": query, "variables": {"address": attestation_contract}},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        entries = (
+            data.get("data", {})
+            .get("contract", {})
+            .get("state", {})
+            .get("ledger", {})
+            .get("att_hash", {})
+            .get("entries", [])
+        )
+        for entry in entries:
+            if entry["key"] == job_id:
+                return entry["value"]
+        return None
+    except Exception:
+        return None

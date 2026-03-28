@@ -1,0 +1,51 @@
+pragma language_version 0.22;
+
+import CompactStandardLibrary;
+
+// ZKai Provider Registry
+// Stores provider TEE pubkeys, endpoints, model info, reputation
+
+export ledger provider_count:     Counter;
+export ledger provider_pubkey:     Map<Bytes<32>, Bytes<32>>;
+export ledger provider_endpoint:   Map<Bytes<32>, Opaque<"string">>;
+export ledger provider_model:      Map<Bytes<32>, Opaque<"string">>;
+export ledger provider_price:      Map<Bytes<32>, Uint<64>>;
+export ledger provider_reputation: Map<Bytes<32>, Uint<64>>;
+export ledger provider_active:     Map<Bytes<32>, Boolean>;
+export ledger provider_owner:      Map<Bytes<32>, Bytes<32>>;
+
+export circuit registerProvider(
+  provider_id: Bytes<32>,
+  pubkey:      Bytes<32>,
+  endpoint:    Opaque<"string">,
+  model:       Opaque<"string">,
+  price:       Uint<64>
+): [] {
+  const pub_id = disclose(provider_id);
+  assert(provider_active.member(pub_id) == false, "Provider already registered");
+
+  provider_pubkey.insert(pub_id, disclose(pubkey));
+  provider_endpoint.insert(pub_id, disclose(endpoint));
+  provider_model.insert(pub_id, disclose(model));
+  provider_price.insert(pub_id, disclose(price));
+  provider_reputation.insert(pub_id, 500000);
+  provider_active.insert(pub_id, true);
+  provider_owner.insert(pub_id, ownPublicKey().bytes);
+  provider_count.increment(1);
+}
+
+export circuit deregisterProvider(provider_id: Bytes<32>): [] {
+  const pub_id = disclose(provider_id);
+  assert(provider_active.member(pub_id), "Provider not found");
+  assert(provider_owner.lookup(pub_id) == ownPublicKey().bytes, "Not the owner");
+  provider_active.insert(pub_id, false);
+}
+
+export circuit updateReputation(
+  provider_id: Bytes<32>,
+  new_rep:     Uint<64>
+): [] {
+  const pub_id = disclose(provider_id);
+  assert(provider_active.member(pub_id), "Provider not found");
+  provider_reputation.insert(pub_id, disclose(new_rep));
+}

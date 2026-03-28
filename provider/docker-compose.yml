@@ -5,7 +5,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Persist downloaded models so they survive container restarts
       - ollama_models:/root/.ollama
     environment:
       - OLLAMA_MODEL=qwen2.5:1.5b
@@ -13,7 +12,42 @@ services:
       - MAX_TOKENS=512
       - HOST=0.0.0.0
       - PORT=8080
+      # Bridge sidecar URL — enclave posts attestations here after each job
+      - ZKAI_BRIDGE_URL=http://bridge:7300
+      # API keys — comma-separated list of valid keys (or set ZKAI_API_KEYS_FILE)
+      - ZKAI_API_KEYS=${ZKAI_API_KEYS:-}
+    depends_on:
+      bridge:
+        condition: service_healthy
+    restart: unless-stopped
+
+  bridge:
+    image: node:22-alpine
+    container_name: zkai-bridge
+    working_dir: /app
+    volumes:
+      - ../bridge:/app
+      - ../deploy/compiled:/app/compiled
+      - ../deploy/deployment.json:/app/deployment.json
+      - ../deploy/.seed:/deploy/.seed:ro
+      - ../deploy/.bridge-seed:/deploy/.bridge-seed:ro
+      - bridge_leveldb:/app/midnight-level-db
+    environment:
+      - BRIDGE_PORT=7300
+      - PROOF_SERVER_URL=http://host.docker.internal:6300
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "7300:7300"
+    command: sh -c "npm install --silent && npx tsx src/server.ts"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7300/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 300s  # wallet sync can take up to 5 min
     restart: unless-stopped
 
 volumes:
   ollama_models:
+  bridge_leveldb:

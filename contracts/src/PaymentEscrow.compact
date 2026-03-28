@@ -1,0 +1,50 @@
+pragma language_version 0.22;
+
+import CompactStandardLibrary;
+
+// ZKai Payment Escrow
+// User locks DUST before inference. Provider claims after job done.
+// Shielded — Midnight handles ZK for DUST transfers automatically.
+
+export ledger job_user:             Map<Bytes<32>, Bytes<32>>;
+export ledger job_provider:         Map<Bytes<32>, Bytes<32>>;
+export ledger job_amount:           Map<Bytes<32>, Uint<64>>;
+export ledger job_attestation_hash: Map<Bytes<32>, Bytes<32>>;
+// status: 0 = Pending, 1 = Completed, 2 = Refunded
+export ledger job_status:           Map<Bytes<32>, Uint<8>>;
+
+export circuit createJob(
+  job_id:      Bytes<32>,
+  provider_id: Bytes<32>,
+  amount:      Uint<64>
+): [] {
+  const pub_job_id = disclose(job_id);
+  assert(job_status.member(pub_job_id) == false, "Job ID already exists");
+
+  job_user.insert(pub_job_id, ownPublicKey().bytes);
+  job_provider.insert(pub_job_id, disclose(provider_id));
+  job_amount.insert(pub_job_id, disclose(amount));
+  job_attestation_hash.insert(pub_job_id, "00000000000000000000000000000000" as Bytes<32>);
+  job_status.insert(pub_job_id, 0);
+}
+
+export circuit completeJob(
+  job_id:           Bytes<32>,
+  attestation_hash: Bytes<32>
+): [] {
+  const pub_job_id = disclose(job_id);
+  assert(job_status.member(pub_job_id), "Job not found");
+  assert(job_status.lookup(pub_job_id) == 0, "Job not pending");
+
+  job_attestation_hash.insert(pub_job_id, disclose(attestation_hash));
+  job_status.insert(pub_job_id, 1);
+}
+
+export circuit disputeJob(job_id: Bytes<32>): [] {
+  const pub_job_id = disclose(job_id);
+  assert(job_status.member(pub_job_id), "Job not found");
+  assert(job_status.lookup(pub_job_id) == 0, "Job not pending");
+  assert(job_user.lookup(pub_job_id) == ownPublicKey().bytes, "Not job owner");
+
+  job_status.insert(pub_job_id, 2);
+}

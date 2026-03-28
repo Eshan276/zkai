@@ -1,0 +1,211 @@
+"""
+zkai register   — register provider on Midnight chain
+zkai deregister — remove provider from registry
+zkai info       — print provider ID, pubkey, endpoint
+"""
+
+import hashlib
+import json
+import time
+from pathlib import Path
+
+import requests
+import typer
+from rich.panel import Panel
+from rich.prompt import Prompt, Confirm
+
+from zkai_cli.util import (
+    console, err_console,
+    compose_dir, deploy_dir, find_repo_root,
+    require_docker, stream,
+)
+
+_PROVIDER_ID_FILE = ".provider_id"
+_ENCLAVE_URL = "http://127.0.0.1:8080"
+_BRIDGE_URL = "http://127.0.0.1:7300"
+
+
+# ── register ──────────────────────────────────────────────────────────────────
+
+def register(
+    repo_dir: str | None,
+    endpoint: str | None,
+    model: str,
+    price: int,
+):
+    require_docker()
+    repo = find_repo_root(repo_dir)
+
+    # Check bridge is up and synced
+    _wait_for_bridge()
+
+    # Get TEE pubkey from local enclave
+    console.print("[bold]Fetching TEE pubkey from enclave...[/bold]")
+    pubkey = _get_enclave_pubkey()
+    console.print(f"  pubkey: {pubkey[:16]}...{pubkey[-8:]}")
+
+    # Derive stable provider_id = sha256(pubkey)[:64]
+    provider_id = hashlib.sha256(pubkey.encode()).hexdigest()
+    console.print(f"  provider_id: {provider_id}")
+
+    # Endpoint
+    if not endpoint:
+        endpoint = Prompt.ask(
+            "\nPublic endpoint URL (consumers will connect here)",
+            default="http://localhost:8080",
+        )
+
+    console.print(f"\n[bold]Registering on Midnight chain...[/bold]")
+    console.print(f"  endpoint: {endpoint}")
+    console.print(f"  model:    {model}")
+    console.print(f"  price:    {price} DUST/req")
+
+    # Call bridge register endpoint
+    pubkey_padded = pubkey.zfill(64)  # ensure 32 bytes (64 hex chars)
+    resp = requests.post(
+        f"{_BRIDGE_URL}/registry/register-provider",
+        json={
+            "provider_id": provider_id,
+            "pubkey": pubkey_padded,
+            "endpoint": endpoint,
+            "model": model,
+            "price": str(price),
+        },
+        timeout=120,
+    )
+
+    if not resp.ok:
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        err_console.print(f"[red]Registration failed:[/red] {data.get('error', resp.text)}")
+        raise typer.Exit(1)
+
+    result = resp.json()
+    tx_id = result.get("tx_id", "submitted")
+
+    # Save provider_id locally
+    pid_file = compose_dir(repo) / _PROVIDER_ID_FILE
+    pid_file.write_text(json.dumps({
+        "provider_id": provider_id,
+        "pubkey": pubkey,
+        "endpoint": endpoint,
+        "model": model,
+        "price": price,
+    }))
+
+    console.print(Panel(
+        f"[green bold]Provider registered![/green bold]\n\n"
+        f"  TX:          {tx_id}\n"
+        f"  Provider ID: {provider_id}\n"
+        f"  Endpoint:    {endpoint}\n\n"
+        f"Saved to [dim]{pid_file}[/dim]\n"
+        f"Your node is now discoverable by consumers on the Midnight registry.",
+        border_style="green",
+    ))
+
+
+# ── deregister ────────────────────────────────────────────────────────────────
+
+def deregister(repo_dir: str | None):
+    require_docker()
+    repo = find_repo_root(repo_dir)
+
+    pid_file = compose_dir(repo) / _PROVIDER_ID_FILE
+    provider_id = _load_provider_id(pid_file)
+
+    console.print(f"[bold]Deregistering provider:[/bold] {provider_id}")
+    if not Confirm.ask("Are you sure? This removes you from the on-chain registry.", default=False):
+        console.print("Aborted.")
+        raise typer.Exit(0)
+
+    resp = requests.post(
+        f"{_BRIDGE_URL}/registry/deregister-provider",
+        json={"provider_id": provider_id},
+        timeout=120,
+    )
+
+    if not resp.ok:
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        err_console.print(f"[red]Deregistration failed:[/red] {data.get('error', resp.text)}")
+        raise typer.Exit(1)
+
+    console.print("[green]Provider deregistered.[/green]")
+    pid_file.unlink(missing_ok=True)
+
+
+# ── info ──────────────────────────────────────────────────────────────────────
+
+def info(repo_dir: str | None):
+    repo = find_repo_root(repo_dir)
+    pid_file = compose_dir(repo) / _PROVIDER_ID_FILE
+
+    if not pid_file.exists():
+        console.print("[yellow]Provider not registered yet.[/yellow] Run [bold]zkai register[/bold] first.")
+        return
+
+    data = json.loads(pid_file.read_text())
+    console.print()
+    console.print(f"  [bold]Provider ID:[/bold] {data.get('provider_id', '?')}")
+    console.print(f"  [bold]Pubkey:[/bold]      {data.get('pubkey', '?')}")
+    console.print(f"  [bold]Endpoint:[/bold]    {data.get('endpoint', '?')}")
+    console.print(f"  [bold]Model:[/bold]       {data.get('model', '?')}")
+    console.print(f"  [bold]Price:[/bold]       {data.get('price', '?')} DUST/req")
+    console.print()
+
+    # Live pubkey check
+    try:
+        live_pk = _get_enclave_pubkey()
+        if live_pk == data.get("pubkey"):
+            console.print("[green]Enclave pubkey matches registered pubkey.[/green]")
+        else:
+            console.print("[yellow]Warning: enclave pubkey has changed since registration.[/yellow]")
+            console.print("Run [bold]zkai register[/bold] again to update the on-chain entry.")
+    except Exception:
+        console.print("[dim]Enclave not reachable — can't verify pubkey.[/dim]")
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _get_enclave_pubkey() -> str:
+    try:
+        r = requests.get(f"{_ENCLAVE_URL}/pubkey", timeout=10)
+        r.raise_for_status()
+        return r.json()["pubkey"]
+    except Exception as e:
+        err_console.print(f"[red]Cannot reach enclave at {_ENCLAVE_URL}/pubkey:[/red] {e}")
+        err_console.print("Make sure the enclave is running: [bold]zkai start[/bold]")
+        raise typer.Exit(1)
+
+
+def _wait_for_bridge(timeout: int = 30):
+    """Wait for bridge to be up and synced (up to timeout seconds)."""
+    console.print("[bold]Checking bridge...[/bold]", end=" ")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"{_BRIDGE_URL}/health", timeout=3)
+            data = r.json()
+            if data.get("synced"):
+                console.print("[green]synced[/green]")
+                return
+            else:
+                console.print("[yellow]wallet not yet synced — waiting...[/yellow]")
+                time.sleep(5)
+                continue
+        except Exception:
+            pass
+        time.sleep(3)
+        console.print(".", end="", flush=True)
+
+    err_console.print(f"\n[red]Bridge not reachable or not synced after {timeout}s.[/red]")
+    err_console.print("Run [bold]zkai logs bridge[/bold] to diagnose. Wallet sync can take 2-5 min.")
+    raise typer.Exit(1)
+
+
+def _load_provider_id(pid_file: Path) -> str:
+    if not pid_file.exists():
+        err_console.print(
+            "[red]No provider_id found.[/red] "
+            "Run [bold]zkai register[/bold] first, or set --provider-id."
+        )
+        raise typer.Exit(1)
+    return json.loads(pid_file.read_text())["provider_id"]

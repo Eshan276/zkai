@@ -1,0 +1,20 @@
+
+eshan zkai/wallet on  main [✘?] is 📦 v1.0.0 via  v25.6.1 via 🐍 v3.11.13 (zkai) 
+❯ cd ~/workdump/zkai/wallet && node keygen.mjs
+╔══════════════════════════════════════╗
+║     ZKai Midnight Wallet Keygen      ║
+╚══════════════════════════════════════╝
+
+⚠  SAVE YOUR SEED — this is your only recovery key
+
+Seed:
+19f533819b965e4efe34a85c7de15ee4e48c261ffe35194028e853bf5943e4f1
+
+Unshielded address (paste in faucet):
+mn_addr_preprod14238jjmltmkwxepndatfx766mpwqe8jwplvy67mut407c3xpmn8sy34yl5
+
+Shielded address (for private transactions):
+mn_shield-addr_preprod14238jjmltmkwxepndatfx766mpwqe8jwplvy67mut407c3xpmn8h9lra5luvzfjrcr4ls6rst7ndz4etacyxedjvhjm9czz5cym0cygklw9kr
+
+eshan zkai/wallet on  main [✘?] is 📦 v1.0.0 via  v25.6.1 via 🐍 v3.11.13 (zkai) 
+❯ 

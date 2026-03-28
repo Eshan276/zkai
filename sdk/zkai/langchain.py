@@ -6,11 +6,11 @@ Before:
     llm = ChatOpenAI(model="gpt-4")
 
 After:
-    from zkai.langchain import ChatZKai
-    llm = ChatZKai(model="qwen2.5-1.5b", wallet_key="...")
+    from zkai import ChatZKai
+    llm = ChatZKai(model="qwen2.5-1.5b", api_key="your-key")
 """
 
-from typing import Any, Iterator, List, Optional
+from typing import Any, List, Optional
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -20,10 +20,12 @@ from .client import ZKai
 
 class ChatZKai(BaseChatModel):
     model: str = "qwen2.5-1.5b"
-    wallet_key: Optional[str] = None
+    api_key: Optional[str] = None
     max_price: Optional[float] = None
     min_reputation: float = 0.0
     registry_contract: Optional[str] = None
+    attestation_contract: Optional[str] = None
+    skip_attestation: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -31,10 +33,12 @@ class ChatZKai(BaseChatModel):
 
     def _get_client(self) -> ZKai:
         return ZKai(
-            wallet_key=self.wallet_key,
+            api_key=self.api_key,
             max_price=self.max_price,
             min_reputation=self.min_reputation,
             registry_contract=self.registry_contract,
+            attestation_contract=self.attestation_contract,
+            skip_attestation=self.skip_attestation,
         )
 
     def _generate(self, messages: List[BaseMessage], **kwargs: Any) -> ChatResult:

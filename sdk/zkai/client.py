@@ -6,7 +6,7 @@ Drop-in replacement: change 2 lines, everything else stays the same.
 import requests
 from dataclasses import dataclass, field
 
-from . import crypto, provider as provider_mod, payment as payment_mod, attestation as att_mod
+from . import crypto, provider as provider_mod, attestation as att_mod
 from .attestation import ZKaiAttestationError
 
 
@@ -39,25 +39,26 @@ class ChatCompletion:
 class ZKai:
     def __init__(
         self,
-        wallet_key: str | None = None,
+        api_key: str | None = None,
         max_price: float | None = None,
         min_reputation: float = 0.0,
         registry_contract: str | None = None,
+        attestation_contract: str | None = None,
         skip_attestation: bool = False,
     ):
-        self._wallet_key = wallet_key
+        self._api_key = api_key
         self._max_price = max_price
         self._min_reputation = min_reputation
         self._registry_contract = registry_contract
+        self._attestation_contract = attestation_contract
         self._skip_attestation = skip_attestation
-        self._payment = payment_mod.PaymentClient(wallet_key)
         self.chat = _Chat(self)
 
     def _infer(self, model: str, messages: list[dict]) -> ChatCompletion:
-        # 1. Build prompt from messages (simple concatenation for now)
+        # 1. Build prompt
         prompt = _messages_to_prompt(messages)
 
-        # 2. Pick provider
+        # 2. Pick provider from on-chain registry (or local stub)
         p = provider_mod.select_provider(
             model=model,
             max_price=self._max_price,
@@ -68,49 +69,43 @@ class ZKai:
         # 3. Fetch live TEE pubkey
         tee_pubkey = provider_mod.fetch_pubkey(p)
 
-        # 4. Generate ephemeral keypair for this request
+        # 4. Generate ephemeral keypair + encrypt prompt
         our_private, our_public = crypto.generate_keypair()
-
-        # 5. Encrypt prompt
         encrypted_prompt = crypto.encrypt(prompt, tee_pubkey, our_private)
 
-        # 6. Create escrow job (no-op in Phase 1-2)
-        token_budget = len(prompt.split()) * 2  # rough estimate
-        job_id = self._payment.create_job(p.id, token_budget)
-
-        # 7. Send to provider
+        # 5. Send to provider
+        headers = {"X-API-Key": self._api_key} if self._api_key else {}
         resp = requests.post(
             f"{p.endpoint}/infer",
             json={
                 "client_pubkey": our_public,
                 "encrypted_prompt": encrypted_prompt,
             },
+            headers=headers,
             timeout=120,
         )
+        if resp.status_code == 401:
+            raise ZKaiAuthError("Invalid or missing API key. Get one from your provider.")
         resp.raise_for_status()
         data = resp.json()
 
-        # 8. Verify attestation (silent — raises ZKaiAttestationError on failure)
+        job_id = data["job_id"]
+
+        # 6. Verify attestation (silent — raises ZKaiAttestationError on failure)
         if not self._skip_attestation:
-            try:
-                att_mod.verify(
-                    provider_url=p.endpoint,
-                    received_attestation_hash=data["attestation_hash"],
-                    on_chain_hash=None,  # Phase 3+: fetch from AttestationRegistry
-                )
-            except ZKaiAttestationError:
-                self._payment.dispute_job(job_id)
-                raise
+            att_mod.verify(
+                provider_url=p.endpoint,
+                received_attestation_hash=data["attestation_hash"],
+                attestation_contract=self._attestation_contract,
+                job_id=job_id,
+            )
 
-        # 9. Decrypt response
+        # 7. Decrypt response
         response_text = crypto.decrypt(data["encrypted_response"], tee_pubkey, our_private)
-
-        # 10. Release payment (no-op in Phase 1-2)
         token_count = len(response_text.split())
-        self._payment.complete_job(job_id, data["attestation_hash"], token_count)
 
         return ChatCompletion(
-            id=f"zkai-{job_id}",
+            id=f"zkai-{job_id[:8]}",
             object="chat.completion",
             model=model,
             choices=[Choice(index=0, message=Message(role="assistant", content=response_text))],
@@ -131,10 +126,15 @@ class _Completions:
         return self._client._infer(model, messages)
 
 
+# ── Exceptions ───────────────────────────────────────────────────────────────
+
+class ZKaiAuthError(Exception):
+    pass
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _messages_to_prompt(messages: list[dict]) -> str:
-    """Convert OpenAI messages list to a flat prompt string for llama.cpp."""
     parts = []
     for m in messages:
         role = m.get("role", "user")

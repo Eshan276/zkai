@@ -1,6 +1,7 @@
 pyproject.toml
 zkai/__init__.py
 zkai/attestation.py
+zkai/bridge.py
 zkai/client.py
 zkai/crypto.py
 zkai/langchain.py
