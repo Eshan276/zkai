@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  release:
+    types: [created]
 
 permissions:
   contents: write   # needed to create GitHub releases and upload assets
@@ -35,8 +37,14 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
 
-          # Write release notes to a file to avoid YAML/heredoc quoting issues
-          cat > /tmp/release-notes.md << NOTES
+          # Upload assets — create the release if it doesn't exist yet, otherwise just upload
+          if gh release view "$GITHUB_REF_NAME" &>/dev/null; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "dist/zkai-${VERSION}.pyz" \
+              "dist/zkai.pyz" \
+              --clobber
+          else
+            cat > /tmp/release-notes.md << NOTES
           ## Install
 
           \`\`\`bash
@@ -52,9 +60,9 @@ jobs:
           - Python 3.9+
           - Docker + Docker Compose
           NOTES
-
-          gh release create "$GITHUB_REF_NAME" \
-            --title "ZKai CLI v${VERSION}" \
-            --notes-file /tmp/release-notes.md \
-            "dist/zkai-${VERSION}.pyz" \
-            "dist/zkai.pyz"
+            gh release create "$GITHUB_REF_NAME" \
+              --title "ZKai CLI v${VERSION}" \
+              --notes-file /tmp/release-notes.md \
+              "dist/zkai-${VERSION}.pyz" \
+              "dist/zkai.pyz"
+          fi
