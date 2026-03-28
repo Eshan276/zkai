@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-GITHUB_ORG="your-org"
+GITHUB_ORG="Eshan276"
 GITHUB_REPO="zkai"
 VERSION="${ZKAI_VERSION:-latest}"
 INSTALL_DIR="${ZKAI_INSTALL_DIR:-$HOME/.local/bin}"
