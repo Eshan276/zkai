@@ -30,7 +30,7 @@ services:
       sh -c "
         npm install --silent &&
         echo 'Waiting for proof server on proof-server:6300...' &&
-        until (echo > /dev/tcp/proof-server/6300) 2>/dev/null; do sleep 2; done &&
+        until nc -z proof-server 6300 2>/dev/null; do sleep 2; done &&
         echo 'Proof server ready.' &&
         npx tsx src/server.ts
       "
