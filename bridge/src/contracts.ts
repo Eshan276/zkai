@@ -5,6 +5,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { CompiledContract } from '@midnight-ntwrk/compact-js';
@@ -92,14 +93,24 @@ export async function deregisterProvider(providerId: string): Promise<string> {
 
 // ── PaymentEscrow ──────────────────────────────────────────────────────────
 
+function toBytes32(hex: string): Buffer {
+  // Ensure exactly 32 bytes for Compact Bytes<32>
+  const clean = hex.replace(/^0x/, '');
+  if (/^[0-9a-fA-F]{64}$/.test(clean)) {
+    return Buffer.from(clean, 'hex');
+  }
+  // Not a valid 32-byte hex — SHA256 hash it to a deterministic 32 bytes
+  return createHash('sha256').update(hex).digest();
+}
+
 export async function createJob(
   jobId: string,
   providerId: string,
   amount: string,
 ): Promise<string> {
   return callCircuit('PaymentEscrow', 'createJob', [
-    Buffer.from(jobId, 'hex'),
-    Buffer.from(providerId, 'hex'),
+    toBytes32(jobId),
+    toBytes32(providerId),
     BigInt(amount),
   ]);
 }
@@ -109,14 +120,14 @@ export async function completeJob(
   attestationHash: string,
 ): Promise<string> {
   return callCircuit('PaymentEscrow', 'completeJob', [
-    Buffer.from(jobId, 'hex'),
-    Buffer.from(attestationHash, 'hex'),
+    toBytes32(jobId),
+    toBytes32(attestationHash),
   ]);
 }
 
 export async function disputeJob(jobId: string): Promise<string> {
   return callCircuit('PaymentEscrow', 'disputeJob', [
-    Buffer.from(jobId, 'hex'),
+    toBytes32(jobId),
   ]);
 }
 
