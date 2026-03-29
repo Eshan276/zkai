@@ -96,8 +96,9 @@ def infer(req: InferRequest, _=Security(require_api_key)):
     att = enclave.get_attestation()
     attestation_hash = att["report_hash"]
 
-    # Post attestation to Midnight chain (non-blocking, provider-side)
+    # Post attestation + complete payment on Midnight chain (non-blocking, provider-side)
     _post_attestation_async(job_id, attestation_hash, att.get("model_hash", "0" * 64))
+    _complete_payment_async(job_id, attestation_hash)
 
     return InferResponse(
         job_id=job_id,
@@ -140,6 +141,25 @@ def _post_attestation_async(job_id: str, attestation_hash: str, model_hash: str)
             print(f"[api] Warning: attestation post failed: {e}")
 
     threading.Thread(target=_post, daemon=True).start()
+
+
+def _complete_payment_async(job_id: str, attestation_hash: str):
+    """Fire-and-forget: mark job complete on PaymentEscrow contract."""
+    bridge_url = os.environ.get("ZKAI_BRIDGE_URL")
+    if not bridge_url:
+        return
+
+    def _complete():
+        try:
+            _http.post(
+                f"{bridge_url}/payment/complete-job",
+                json={"job_id": job_id, "attestation_hash": attestation_hash},
+                timeout=120,
+            )
+        except Exception as e:
+            print(f"[api] Warning: payment complete failed: {e}")
+
+    threading.Thread(target=_complete, daemon=True).start()
 
 
 if __name__ == "__main__":
