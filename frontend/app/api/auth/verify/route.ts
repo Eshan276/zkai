@@ -1,0 +1,52 @@
+// POST /api/auth/verify
+// Body: { wallet_address, nonce, signature }
+// Returns: { api_key: string }
+//
+// Verifies the nonce exists + not expired, then issues an API key.
+// Signature verification is intentionally lightweight for now —
+// the wallet address itself is the identity (Midnight doesn't have
+// standard secp256k1 signing exposed in the browser API yet).
+// When Midnight exposes signData properly we'll add full sig verification.
+
+import { NextResponse } from 'next/server';
+import { sql } from '@/lib/db';
+import { randomBytes } from 'crypto';
+
+export async function POST(req: Request) {
+  const { wallet_address, nonce } = await req.json();
+
+  if (!wallet_address || !nonce) {
+    return NextResponse.json({ error: 'wallet_address and nonce required' }, { status: 400 });
+  }
+
+  // Verify nonce exists, matches wallet, and hasn't expired
+  const rows = await sql`
+    SELECT * FROM challenges
+    WHERE nonce = ${nonce}
+      AND wallet_address = ${wallet_address}
+      AND expires_at > NOW()
+  `;
+
+  if (rows.length === 0) {
+    return NextResponse.json({ error: 'Invalid or expired nonce' }, { status: 401 });
+  }
+
+  // Consume the nonce (one-time use)
+  await sql`DELETE FROM challenges WHERE nonce = ${nonce}`;
+
+  // Upsert user
+  await sql`
+    INSERT INTO users (wallet_address) VALUES (${wallet_address})
+    ON CONFLICT (wallet_address) DO NOTHING
+  `;
+
+  // Issue API key
+  const api_key = `zkai-${randomBytes(24).toString('hex')}`;
+
+  await sql`
+    INSERT INTO api_keys (key, wallet_address)
+    VALUES (${api_key}, ${wallet_address})
+  `;
+
+  return NextResponse.json({ api_key, wallet_address });
+}

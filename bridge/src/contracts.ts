@@ -103,32 +103,24 @@ function toBytes32(hex: string): Buffer {
   return createHash('sha256').update(hex).digest();
 }
 
-export async function createJob(
+export async function deposit(amount: string): Promise<string> {
+  return callCircuit('PaymentEscrow', 'deposit', [BigInt(amount)]);
+}
+
+export async function deductBalance(
+  walletAddress: string,
   jobId: string,
-  providerId: string,
   amount: string,
 ): Promise<string> {
-  return callCircuit('PaymentEscrow', 'createJob', [
+  return callCircuit('PaymentEscrow', 'deductBalance', [
+    toBytes32(walletAddress),
     toBytes32(jobId),
-    toBytes32(providerId),
     BigInt(amount),
   ]);
 }
 
-export async function completeJob(
-  jobId: string,
-  attestationHash: string,
-): Promise<string> {
-  return callCircuit('PaymentEscrow', 'completeJob', [
-    toBytes32(jobId),
-    toBytes32(attestationHash),
-  ]);
-}
-
-export async function disputeJob(jobId: string): Promise<string> {
-  return callCircuit('PaymentEscrow', 'disputeJob', [
-    toBytes32(jobId),
-  ]);
+export async function withdraw(amount: string): Promise<string> {
+  return callCircuit('PaymentEscrow', 'withdraw', [BigInt(amount)]);
 }
 
 // ── AttestationRegistry ────────────────────────────────────────────────────

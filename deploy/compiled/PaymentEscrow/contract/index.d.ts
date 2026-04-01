@@ -4,43 +4,61 @@ export type Witnesses<PS> = {
 }
 
 export type ImpureCircuits<PS> = {
-  createJob(context: __compactRuntime.CircuitContext<PS>,
-            job_id_0: Uint8Array,
-            provider_id_0: Uint8Array,
-            amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  completeJob(context: __compactRuntime.CircuitContext<PS>,
-              job_id_0: Uint8Array,
-              attestation_hash_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  disputeJob(context: __compactRuntime.CircuitContext<PS>, job_id_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  deposit(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  deductBalance(context: __compactRuntime.CircuitContext<PS>,
+                wallet_pk_0: Uint8Array,
+                provider_id_0: Uint8Array,
+                job_id_0: Uint8Array,
+                amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  withdraw(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type ProvableCircuits<PS> = {
-  createJob(context: __compactRuntime.CircuitContext<PS>,
-            job_id_0: Uint8Array,
-            provider_id_0: Uint8Array,
-            amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  completeJob(context: __compactRuntime.CircuitContext<PS>,
-              job_id_0: Uint8Array,
-              attestation_hash_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  disputeJob(context: __compactRuntime.CircuitContext<PS>, job_id_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  deposit(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  deductBalance(context: __compactRuntime.CircuitContext<PS>,
+                wallet_pk_0: Uint8Array,
+                provider_id_0: Uint8Array,
+                job_id_0: Uint8Array,
+                amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  withdraw(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type PureCircuits = {
 }
 
 export type Circuits<PS> = {
-  createJob(context: __compactRuntime.CircuitContext<PS>,
-            job_id_0: Uint8Array,
-            provider_id_0: Uint8Array,
-            amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  completeJob(context: __compactRuntime.CircuitContext<PS>,
-              job_id_0: Uint8Array,
-              attestation_hash_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  disputeJob(context: __compactRuntime.CircuitContext<PS>, job_id_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  deposit(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  deductBalance(context: __compactRuntime.CircuitContext<PS>,
+                wallet_pk_0: Uint8Array,
+                provider_id_0: Uint8Array,
+                job_id_0: Uint8Array,
+                amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  withdraw(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type Ledger = {
-  job_user: {
+  balance: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: Uint8Array): boolean;
+    lookup(key_0: Uint8Array): bigint;
+    [Symbol.iterator](): Iterator<[Uint8Array, bigint]>
+  };
+  total_spent: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: Uint8Array): boolean;
+    lookup(key_0: Uint8Array): bigint;
+    [Symbol.iterator](): Iterator<[Uint8Array, bigint]>
+  };
+  job_amount: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: Uint8Array): boolean;
+    lookup(key_0: Uint8Array): bigint;
+    [Symbol.iterator](): Iterator<[Uint8Array, bigint]>
+  };
+  job_wallet: {
     isEmpty(): boolean;
     size(): bigint;
     member(key_0: Uint8Array): boolean;
@@ -53,27 +71,6 @@ export type Ledger = {
     member(key_0: Uint8Array): boolean;
     lookup(key_0: Uint8Array): Uint8Array;
     [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]>
-  };
-  job_amount: {
-    isEmpty(): boolean;
-    size(): bigint;
-    member(key_0: Uint8Array): boolean;
-    lookup(key_0: Uint8Array): bigint;
-    [Symbol.iterator](): Iterator<[Uint8Array, bigint]>
-  };
-  job_attestation_hash: {
-    isEmpty(): boolean;
-    size(): bigint;
-    member(key_0: Uint8Array): boolean;
-    lookup(key_0: Uint8Array): Uint8Array;
-    [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]>
-  };
-  job_status: {
-    isEmpty(): boolean;
-    size(): bigint;
-    member(key_0: Uint8Array): boolean;
-    lookup(key_0: Uint8Array): bigint;
-    [Symbol.iterator](): Iterator<[Uint8Array, bigint]>
   };
 }
 

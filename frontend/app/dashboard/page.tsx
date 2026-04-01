@@ -9,7 +9,7 @@ import {
   TrendingUp, Zap, Lock,
 } from 'lucide-react';
 import type { Provider, Job } from '@/lib/indexer';
-import { connectWallet, getWalletExtension, type MidnightWalletState } from '@/lib/wallet';
+import { connectWallet, refreshWalletState, waitForExtension, type MidnightWalletState } from '@/lib/wallet';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,31 +25,39 @@ const JOB_STATUS_ICON = [Clock, CheckCircle, XCircle];
 
 // ── Wallet button ─────────────────────────────────────────────────────────────
 
-function WalletButton() {
+function WalletButton({ onWalletChange }: { onWalletChange: (addr: string | null) => void }) {
   const [walletState, setWalletState] = useState<MidnightWalletState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [hasExtension, setHasExtension] = useState<boolean | null>(null);
-  const unsubRef = useRef<(() => void) | null>(null);
+  const apiRef = useRef<Awaited<ReturnType<typeof connectWallet>>['api'] | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    // Give extension time to inject
-    const timer = setTimeout(() => {
-      setHasExtension(!!getWalletExtension());
-    }, 500);
-    return () => clearTimeout(timer);
+    waitForExtension(3000).then(ext => setHasExtension(!!ext));
   }, []);
+
+  // Poll wallet balance every 15s when connected
+  useEffect(() => {
+    if (!walletState || !apiRef.current) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const fresh = await refreshWalletState(apiRef.current!);
+        setWalletState(fresh);
+      } catch {}
+    }, 15_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [!!walletState]);
 
   async function connect() {
     setConnecting(true);
     setError('');
     try {
       const { api, state } = await connectWallet();
+      apiRef.current = api;
       setWalletState(state);
-      // Subscribe to live updates
-      const sub = api.state().subscribe(setWalletState);
-      unsubRef.current = () => sub.unsubscribe();
+      onWalletChange(state.address);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -58,8 +66,10 @@ function WalletButton() {
   }
 
   function disconnect() {
-    unsubRef.current?.();
+    if (pollRef.current) clearInterval(pollRef.current);
+    apiRef.current = null;
     setWalletState(null);
+    onWalletChange(null);
   }
 
   function copyAddress() {
@@ -70,8 +80,8 @@ function WalletButton() {
   }
 
   if (walletState) {
-    const short = `${walletState.address.slice(0, 12)}…${walletState.address.slice(-6)}`;
-    const dust = walletState.balances?.['DUST'] ?? BigInt(0);
+    const short = `${walletState.address.slice(0, 16)}…${walletState.address.slice(-6)}`;
+    const dust = walletState.dustBalance ?? BigInt(0);
     return (
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
@@ -81,7 +91,7 @@ function WalletButton() {
             {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
           <span className="text-white/20">·</span>
-          <span className="text-sm text-white/50">{dust.toLocaleString()} DUST</span>
+          <span className="text-sm text-white/50">{dust.toString()} DUST</span>
         </div>
         <button
           onClick={disconnect}
@@ -436,39 +446,155 @@ function ModelsTab({ providers, loading }: { providers: Provider[]; loading: boo
 
 // ── API Keys tab ──────────────────────────────────────────────────────────────
 
-function KeysTab() {
+interface ApiKey { key: string; created_at: string; revoked: boolean; label: string; }
+
+function KeysTab({ walletAddress }: { walletAddress: string | null }) {
+  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  const [error, setError] = useState('');
+  const [copiedKey, setCopiedKey] = useState('');
+
+  const loadKeys = useCallback(async () => {
+    if (!walletAddress) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/auth/me?wallet=${encodeURIComponent(walletAddress)}`);
+      if (res.ok) setKeys((await res.json()).keys ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, [walletAddress]);
+
+  useEffect(() => { loadKeys(); }, [loadKeys]);
+
+  async function issueKey() {
+    if (!walletAddress) return;
+    setIssuing(true);
+    setError('');
+    try {
+      // 1. Get a challenge nonce
+      const chalRes = await fetch('/api/auth/challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet_address: walletAddress }),
+      });
+      const { nonce } = await chalRes.json();
+
+      // 2. Verify (no full sig yet — wallet address is the proof of connection)
+      const verRes = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet_address: walletAddress, nonce }),
+      });
+      if (!verRes.ok) {
+        const e = await verRes.json();
+        throw new Error(e.error ?? 'Failed to issue key');
+      }
+      await loadKeys();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  async function revokeKey(key: string) {
+    if (!walletAddress) return;
+    await fetch('/api/auth/me', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, wallet_address: walletAddress }),
+    });
+    await loadKeys();
+  }
+
+  function copyKey(key: string) {
+    navigator.clipboard.writeText(key);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(''), 2000);
+  }
+
+  if (!walletAddress) {
+    return (
+      <div className="border border-white/10 rounded-2xl p-16 text-center space-y-3">
+        <Wallet className="w-8 h-8 text-white/20 mx-auto" />
+        <p className="text-white/40 text-sm">Connect your Midnight wallet to generate API keys.</p>
+      </div>
+    );
+  }
+
+  const activeKeys = keys.filter(k => !k.revoked);
+
   return (
     <div className="space-y-6">
+      {/* Issue key */}
       <div className="border border-white/10 rounded-2xl p-6 bg-white/[0.02]">
-        <h3 className="font-semibold mb-1">API Keys</h3>
-        <p className="text-sm text-white/40 mb-5">
-          API keys are managed by your provider via the <code className="bg-white/10 px-1 rounded">zkai keys</code> CLI command.
-          Share keys with consumers who you want to grant access.
-        </p>
-        <div className="bg-black/40 border border-white/10 rounded-xl overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/10 bg-white/5">
-            <span className="text-xs text-white/30">Provider CLI</span>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="font-semibold mb-1">Your API Keys</h3>
+            <p className="text-sm text-white/40">
+              One key works with all ZKai providers. Connect your wallet to generate.
+            </p>
           </div>
-          <pre className="p-4 text-sm text-white/60 overflow-x-auto"><code>{`# List all configured keys
-zkai keys list
-
-# Generate 1 new key
-zkai keys add
-
-# Generate N keys
-zkai keys add --count 3
-
-# Remove a specific key
-zkai keys remove <key>
-
-# Replace all keys
-zkai keys rotate`}</code></pre>
+          <button
+            onClick={issueKey}
+            disabled={issuing}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-xl transition-colors font-medium shrink-0"
+          >
+            <Key className="w-4 h-4" />
+            {issuing ? 'Generating…' : 'Generate Key'}
+          </button>
         </div>
+
+        {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+
+        {loading ? (
+          <div className="space-y-2">
+            {[1,2].map(i => <div key={i} className="h-14 rounded-xl bg-white/5 animate-pulse" />)}
+          </div>
+        ) : activeKeys.length === 0 ? (
+          <div className="border border-dashed border-white/10 rounded-xl p-8 text-center text-white/30 text-sm">
+            No active keys. Generate one above.
+          </div>
+        ) : (
+          <div className="divide-y divide-white/10 border border-white/10 rounded-xl overflow-hidden">
+            {activeKeys.map(k => (
+              <div key={k.key} className="flex items-center justify-between px-4 py-3.5 hover:bg-white/2 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Key className="w-4 h-4 text-violet-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-mono text-sm text-white/70 truncate">{k.key.slice(0, 28)}…</div>
+                    <div className="text-xs text-white/30 mt-0.5">
+                      Created {new Date(k.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-4">
+                  <button
+                    onClick={() => copyKey(k.key)}
+                    className="p-1.5 text-white/30 hover:text-white/70 hover:bg-white/5 rounded-lg transition-colors"
+                    title="Copy"
+                  >
+                    {copiedKey === k.key ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={() => revokeKey(k.key)}
+                    className="p-1.5 text-white/30 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-colors"
+                    title="Revoke"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Usage */}
       <div className="border border-white/10 rounded-2xl p-6 bg-white/[0.02]">
-        <h3 className="font-semibold mb-1">Consumer Usage</h3>
-        <p className="text-sm text-white/40 mb-4">Pass your key via the SDK or HTTP header.</p>
+        <h3 className="font-semibold mb-3">Usage</h3>
         <div className="bg-black/40 border border-white/10 rounded-xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/10 bg-white/5">
             <span className="text-xs text-white/30">Python SDK</span>
@@ -476,14 +602,15 @@ zkai keys rotate`}</code></pre>
           <pre className="p-4 text-sm text-white/60 overflow-x-auto"><code>{`from zkai import ZKai
 
 client = ZKai(
-    api_key="<your-key>",
+    api_key="${activeKeys[0]?.key ?? '<your-key>'}",
     provider_endpoint="https://provider.example.com",
 )
 
 resp = client.chat.completions.create(
     model="qwen2.5-1.5b",
     messages=[{"role": "user", "content": "Hello!"}],
-)`}</code></pre>
+)
+print(resp.choices[0].message.content)`}</code></pre>
         </div>
       </div>
     </div>
@@ -498,6 +625,7 @@ export default function DashboardPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -529,7 +657,7 @@ export default function DashboardPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <WalletButton />
+            <WalletButton onWalletChange={setWalletAddress} />
             <button
               onClick={load}
               disabled={loading}
@@ -545,7 +673,7 @@ export default function DashboardPage() {
           {tab === 'overview' && <OverviewTab jobs={jobs} providers={providers} loading={loading} />}
           {tab === 'activity' && <ActivityTab jobs={jobs} loading={loading} />}
           {tab === 'models' && <ModelsTab providers={providers} loading={loading} />}
-          {tab === 'keys' && <KeysTab />}
+          {tab === 'keys' && <KeysTab walletAddress={walletAddress} />}
         </main>
       </div>
     </div>

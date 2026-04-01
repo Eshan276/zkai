@@ -20,23 +20,48 @@ import enclave
 
 _API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-def _load_api_keys() -> set[str]:
-    raw = os.environ.get("ZKAI_API_KEYS", "")
-    keys = {k.strip() for k in raw.split(",") if k.strip()}
-    keys_file = os.environ.get("ZKAI_API_KEYS_FILE")
-    if keys_file and os.path.exists(keys_file):
-        with open(keys_file) as f:
-            keys.update(k.strip() for k in f if k.strip())
-    return keys
+# Central auth server URL — set ZKAI_AUTH_URL to your Next.js deployment
+# e.g. https://zkai.vercel.app  or  http://localhost:3000
+_AUTH_URL = os.environ.get("ZKAI_AUTH_URL", "").rstrip("/")
 
-_API_KEYS = _load_api_keys()
+# 60s in-memory cache: key -> (wallet_address, expires_at)
+_key_cache: dict[str, tuple[str, float]] = {}
+import time
 
-def require_api_key(key: str | None = Security(_API_KEY_HEADER)):
-    # If no keys configured, auth is open (dev mode)
-    if not _API_KEYS:
-        return
-    if not key or key not in _API_KEYS:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+def _verify_key_remote(key: str) -> str | None:
+    """Returns wallet_address if valid, None if not. Caches for 60s."""
+    now = time.time()
+    if key in _key_cache:
+        wallet, expires = _key_cache[key]
+        if now < expires:
+            return wallet
+        del _key_cache[key]
+    try:
+        r = _http.get(
+            f"{_AUTH_URL}/api/auth/verify-key",
+            params={"key": key},
+            timeout=5,
+        )
+        data = r.json()
+        if data.get("valid"):
+            wallet = data["wallet_address"]
+            _key_cache[key] = (wallet, now + 60)
+            return wallet
+    except Exception as e:
+        print(f"[auth] verify-key request failed: {e}")
+    return None
+
+def require_api_key(key: str | None = Security(_API_KEY_HEADER)) -> str | None:
+    """Returns wallet_address of the caller, or raises 401."""
+    # No auth URL configured → open (dev mode)
+    if not _AUTH_URL:
+        return None
+    if not key:
+        raise HTTPException(status_code=401, detail="Missing X-API-Key header")
+    wallet = _verify_key_remote(key)
+    if not wallet:
+        raise HTTPException(status_code=401, detail="Invalid or revoked API key")
+    return wallet
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
@@ -74,7 +99,7 @@ def get_pubkey():
 
 
 @app.post("/infer", response_model=InferResponse)
-def infer(req: InferRequest, _=Security(require_api_key)):
+def infer(req: InferRequest, wallet_address: str | None = Security(require_api_key)):
     """
     Accepts encrypted prompt, runs inference inside TEE, returns encrypted response.
     Operator CANNOT read prompts or responses.
@@ -96,9 +121,9 @@ def infer(req: InferRequest, _=Security(require_api_key)):
     att = enclave.get_attestation()
     attestation_hash = att["report_hash"]
 
-    # Post attestation + complete payment on Midnight chain (non-blocking, provider-side)
+    # Post attestation + deduct balance on Midnight chain (non-blocking, provider-side)
     _post_attestation_async(job_id, attestation_hash, att.get("model_hash", "0" * 64))
-    _complete_payment_async(job_id, attestation_hash)
+    _deduct_balance_async(job_id, wallet_address or "")
 
     return InferResponse(
         job_id=job_id,
@@ -143,23 +168,30 @@ def _post_attestation_async(job_id: str, attestation_hash: str, model_hash: str)
     threading.Thread(target=_post, daemon=True).start()
 
 
-def _complete_payment_async(job_id: str, attestation_hash: str):
-    """Fire-and-forget: mark job complete on PaymentEscrow contract."""
+def _deduct_balance_async(job_id: str, wallet_address: str):
+    """Fire-and-forget: deduct inference cost from consumer's on-chain balance."""
     bridge_url = os.environ.get("ZKAI_BRIDGE_URL")
-    if not bridge_url:
+    if not bridge_url or not wallet_address:
         return
 
-    def _complete():
+    # Price per request — set ZKAI_PRICE_PER_REQUEST in env (DUST units)
+    price = int(os.environ.get("ZKAI_PRICE_PER_REQUEST", "1"))
+
+    def _deduct():
         try:
             _http.post(
-                f"{bridge_url}/payment/complete-job",
-                json={"job_id": job_id, "attestation_hash": attestation_hash},
+                f"{bridge_url}/payment/deduct-balance",
+                json={
+                    "job_id": job_id,
+                    "wallet_address": wallet_address,
+                    "amount": str(price),
+                },
                 timeout=120,
             )
         except Exception as e:
-            print(f"[api] Warning: payment complete failed: {e}")
+            print(f"[api] Warning: balance deduction failed: {e}")
 
-    threading.Thread(target=_complete, daemon=True).start()
+    threading.Thread(target=_deduct, daemon=True).start()
 
 
 if __name__ == "__main__":

@@ -4,12 +4,31 @@
   "runtime-version": "0.15.0",
   "circuits": [
     {
-      "name": "createJob",
+      "name": "deposit",
       "pure": false,
       "proof": true,
       "arguments": [
         {
-          "name": "job_id",
+          "name": "amount",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "deductBalance",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "wallet_pk",
           "type": {
             "type-name": "Bytes",
             "length": 32
@@ -17,6 +36,13 @@
         },
         {
           "name": "provider_id",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "job_id",
           "type": {
             "type-name": "Bytes",
             "length": 32
@@ -37,41 +63,15 @@
       }
     },
     {
-      "name": "completeJob",
+      "name": "withdraw",
       "pure": false,
       "proof": true,
       "arguments": [
         {
-          "name": "job_id",
+          "name": "amount",
           "type": {
-            "type-name": "Bytes",
-            "length": 32
-          }
-        },
-        {
-          "name": "attestation_hash",
-          "type": {
-            "type-name": "Bytes",
-            "length": 32
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
-      "name": "disputeJob",
-      "pure": false,
-      "proof": true,
-      "arguments": [
-        {
-          "name": "job_id",
-          "type": {
-            "type-name": "Bytes",
-            "length": 32
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
           }
         }
       ],
