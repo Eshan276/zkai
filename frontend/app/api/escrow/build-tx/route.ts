@@ -31,7 +31,7 @@ const INDEXER_WS = 'wss://indexer.preprod.midnight.network/api/v3/graphql/ws';
 const PROOF_SERVER_URL = process.env.PROOF_SERVER_URL ?? 'http://localhost:6300';
 const ESCROW_ADDRESS = process.env.NEXT_PUBLIC_ESCROW_CONTRACT!;
 
-const COMPILED_DIR = path.resolve(process.cwd(), '..', 'deploy', 'compiled');
+const COMPILED_DIR = path.resolve(process.cwd(), 'lib', 'compiled');
 
 function loadCompiledContract() {
   return CompiledContract.make('paymentescrow', PaymentEscrowContract.Contract).pipe(
