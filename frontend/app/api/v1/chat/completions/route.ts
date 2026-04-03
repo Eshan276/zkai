@@ -40,7 +40,7 @@ async function getProviders(): Promise<Provider[]> {
 }
 
 function pickProvider(providers: Provider[], model: string): Provider | null {
-  const candidates = providers.filter(p => p.active);
+  const candidates = providers; // already filtered by active=TRUE in SQL
   if (candidates.length === 0) return null;
 
   // Prefer model match, then sort by reputation desc
