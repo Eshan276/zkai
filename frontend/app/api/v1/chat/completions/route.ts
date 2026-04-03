@@ -7,9 +7,18 @@
 
 import { NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import { fetchProviders } from '@/lib/indexer';
-import { CONTRACTS } from '@/lib/contracts';
-import type { Provider } from '@/lib/indexer';
+
+interface Provider {
+  id: string;
+  endpoint: string;
+  model: string;
+  price: number;
+  reputation: number;
+  active: boolean;
+}
+
+// Bridge URL — the ZKai bridge has direct on-chain access
+const BRIDGE_URL = (process.env.ZKAI_BRIDGE_URL ?? 'http://localhost:7300').replace(/\/$/, '');
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -23,7 +32,7 @@ async function verifyKey(key: string): Promise<string | null> {
 
 // ── Provider selection ────────────────────────────────────────────────────────
 
-// Cache providers for 30s to avoid hammering the indexer on every request
+// Cache providers for 30s
 let _providerCache: { providers: Provider[]; at: number } | null = null;
 
 async function getProviders(): Promise<Provider[]> {
@@ -31,7 +40,13 @@ async function getProviders(): Promise<Provider[]> {
   if (_providerCache && now - _providerCache.at < 30_000) {
     return _providerCache.providers;
   }
-  const providers = await fetchProviders(CONTRACTS.ProviderRegistry);
+  const res = await fetch(`${BRIDGE_URL}/providers`, {
+    next: { revalidate: 0 },
+    // @ts-ignore
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Bridge /providers returned ${res.status}`);
+  const providers: Provider[] = await res.json();
   _providerCache = { providers, at: now };
   return providers;
 }

@@ -2,6 +2,16 @@ import { FastifyInstance } from 'fastify';
 import * as contracts from '../contracts.js';
 
 export async function registryRoutes(app: FastifyInstance) {
+  app.get('/providers', async (_req, reply) => {
+    try {
+      const providers = await contracts.fetchProviders();
+      return providers;
+    } catch (e: any) {
+      console.error('[registry] fetchProviders error:', e?.message ?? e);
+      return reply.status(500).send({ error: e?.message ?? String(e) });
+    }
+  });
+
   app.post('/registry/register-provider', async (req, reply) => {
     const { provider_id, pubkey, endpoint, model, price } = req.body as any;
     if (!provider_id || !pubkey || !endpoint || !model || !price) {
