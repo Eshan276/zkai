@@ -1,31 +1,22 @@
 'use client';
 
+import type { ConnectedAPI, InitialAPI } from '@midnight-ntwrk/dapp-connector-api';
+
+export type { ConnectedAPI };
+
 export interface MidnightWalletState {
   address: string;
   dustBalance: bigint;
   unshieldedBalances: Record<string, bigint>;
 }
 
-export interface MidnightWalletEnabledAPI {
-  getUnshieldedAddress(): Promise<unknown>;
-  getShieldedAddresses(): Promise<unknown[]>;
-  getDustBalance(): Promise<unknown>;
-  getUnshieldedBalances(): Promise<unknown>;
-  getTxHistory(): Promise<unknown[]>;
-  getConnectionStatus(): Promise<string>;
-}
-
-export interface MidnightWalletAPI {
-  apiVersion: string;
-  name: string;
-  icon: string;
-  rdns: string;
-  connect(networkId: string): Promise<MidnightWalletEnabledAPI>;
-}
+// Re-export the official type aliases for use throughout the app
+export type MidnightWalletEnabledAPI = ConnectedAPI;
+export type MidnightWalletAPI = InitialAPI;
 
 declare global {
   interface Window {
-    midnight?: Record<string, MidnightWalletAPI>;
+    midnight?: Record<string, InitialAPI>;
   }
 }
 

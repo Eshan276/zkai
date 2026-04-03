@@ -9,7 +9,8 @@ import {
   TrendingUp, Zap, Lock,
 } from 'lucide-react';
 import type { Provider, Job } from '@/lib/indexer';
-import { connectWallet, refreshWalletState, waitForExtension, type MidnightWalletState } from '@/lib/wallet';
+import { connectWallet, refreshWalletState, waitForExtension, type MidnightWalletState, type ConnectedAPI } from '@/lib/wallet';
+import { callEscrow } from '@/lib/escrow';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ const JOB_STATUS_ICON = [Clock, CheckCircle, XCircle];
 
 // ── Wallet button ─────────────────────────────────────────────────────────────
 
-function WalletButton({ onWalletChange }: { onWalletChange: (addr: string | null) => void }) {
+function WalletButton({ onWalletChange, onApiChange }: { onWalletChange: (addr: string | null) => void; onApiChange?: (api: ConnectedAPI | null) => void }) {
   const [walletState, setWalletState] = useState<MidnightWalletState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +59,7 @@ function WalletButton({ onWalletChange }: { onWalletChange: (addr: string | null
       apiRef.current = api;
       setWalletState(state);
       onWalletChange(state.address);
+      onApiChange?.(api as unknown as ConnectedAPI);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -70,6 +72,7 @@ function WalletButton({ onWalletChange }: { onWalletChange: (addr: string | null
     apiRef.current = null;
     setWalletState(null);
     onWalletChange(null);
+    onApiChange?.(null);
   }
 
   function copyAddress() {
@@ -209,29 +212,45 @@ function StatCard({ label, value, sub, icon: Icon, trend }: {
 
 const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL ?? 'http://localhost:7300';
 
-function EscrowCard({ walletAddress }: { walletAddress: string | null }) {
+function EscrowCard({ walletAddress, connectedAPI }: { walletAddress: string | null; connectedAPI: ConnectedAPI | null }) {
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'err'>('idle');
   const [msg, setMsg] = useState('');
+  const [escrowBalance, setEscrowBalance] = useState<string | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+
+  const fetchBalance = useCallback(async (api: ConnectedAPI) => {
+    setBalanceLoading(true);
+    try {
+      const shielded = await api.getShieldedAddresses();
+      const cpk = (shielded as any).shieldedCoinPublicKey;
+      const res = await fetch(`/api/escrow/balance?coinPublicKey=${encodeURIComponent(cpk)}`);
+      if (res.ok) {
+        const { balance } = await res.json();
+        setEscrowBalance(balance);
+      }
+    } catch {}
+    setBalanceLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (connectedAPI) fetchBalance(connectedAPI);
+  }, [connectedAPI, fetchBalance]);
 
   async function handleDeposit() {
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return;
+    if (!connectedAPI) { setStatus('err'); setMsg('Wallet not connected'); return; }
     setStatus('loading');
-    setMsg('');
+    setMsg('Approve in Lace wallet…');
     try {
-      const res = await fetch('/api/escrow/deposit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: String(Math.floor(Number(amount))) }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Deposit failed');
+      await callEscrow(connectedAPI, 'deposit', BigInt(Math.floor(Number(amount))));
       setStatus('ok');
-      setMsg(`Deposited! TX: ${data.tx_id}`);
+      setMsg('Deposited! Refreshing balance…');
       setAmount('');
+      setTimeout(() => fetchBalance(connectedAPI), 5000);
     } catch (e: any) {
       setStatus('err');
-      setMsg(e.message);
+      setMsg(e.message ?? 'Deposit failed');
     }
   }
 
@@ -240,6 +259,11 @@ function EscrowCard({ walletAddress }: { walletAddress: string | null }) {
       <div className="flex items-center gap-2">
         <Lock className="w-4 h-4 text-purple-400" />
         <h2 className="text-sm font-semibold text-white">Escrow Balance</h2>
+        {escrowBalance !== null && (
+          <span className="ml-2 text-sm font-bold text-purple-300">
+            {balanceLoading ? '…' : `${escrowBalance} DUST`}
+          </span>
+        )}
         <span className="text-xs text-white/30 ml-auto">Lock DUST for inference payments</span>
       </div>
       <p className="text-xs text-white/40">
@@ -274,7 +298,7 @@ function EscrowCard({ walletAddress }: { walletAddress: string | null }) {
   );
 }
 
-function OverviewTab({ jobs, providers, loading, walletAddress }: { jobs: Job[]; providers: Provider[]; loading: boolean; walletAddress: string | null }) {
+function OverviewTab({ jobs, providers, loading, walletAddress, connectedAPI }: { jobs: Job[]; providers: Provider[]; loading: boolean; walletAddress: string | null; connectedAPI: ConnectedAPI | null }) {
   const completed = jobs.filter(j => j.status === 1);
   const totalDust = completed.reduce((s, j) => s + j.amount, 0);
   const successRate = jobs.length ? Math.round((completed.length / jobs.length) * 100) : 0;
@@ -292,7 +316,7 @@ function OverviewTab({ jobs, providers, loading, walletAddress }: { jobs: Job[];
       </div>
 
       {/* Escrow */}
-      <EscrowCard walletAddress={walletAddress} />
+      <EscrowCard walletAddress={walletAddress} connectedAPI={connectedAPI} />
 
       {/* Recent activity */}
       <div>
@@ -698,6 +722,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [connectedAPI, setConnectedAPI] = useState<ConnectedAPI | null>(null);
 
   const load = useCallback(async (wallet?: string | null) => {
     setLoading(true);
@@ -731,7 +756,7 @@ export default function DashboardPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <WalletButton onWalletChange={(addr) => { setWalletAddress(addr); load(addr); }} />
+            <WalletButton onWalletChange={(addr) => { setWalletAddress(addr); load(addr); }} onApiChange={setConnectedAPI} />
             <button
               onClick={() => load()}
               disabled={loading}
@@ -744,7 +769,7 @@ export default function DashboardPage() {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6">
-          {tab === 'overview' && <OverviewTab jobs={jobs} providers={providers} loading={loading} walletAddress={walletAddress} />}
+          {tab === 'overview' && <OverviewTab jobs={jobs} providers={providers} loading={loading} walletAddress={walletAddress} connectedAPI={connectedAPI} />}
           {tab === 'activity' && <ActivityTab jobs={jobs} loading={loading} />}
           {tab === 'models' && <ModelsTab providers={providers} loading={loading} />}
           {tab === 'keys' && <KeysTab walletAddress={walletAddress} />}
