@@ -12,11 +12,11 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   // Provider calls this after each inference to deduct from consumer's balance
   app.post('/payment/deduct-balance', async (req, reply) => {
-    const { job_id, wallet_address, amount } = req.body as any;
+    const { job_id, wallet_address, provider_id, amount } = req.body as any;
     if (!job_id || !wallet_address || !amount) {
       return reply.status(400).send({ error: 'job_id, wallet_address, amount required' });
     }
-    const txId = await contracts.deductBalance(wallet_address, job_id, amount);
+    const txId = await contracts.deductBalance(wallet_address, provider_id ?? '0'.repeat(64), job_id, amount);
     return { tx_id: txId };
   });
 

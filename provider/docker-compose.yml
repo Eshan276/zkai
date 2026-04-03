@@ -51,6 +51,7 @@ services:
       - "8080:8080"
     volumes:
       - ollama_models:/root/.ollama
+      - ./.provider_id:/app/.provider_id:ro
     environment:
       - OLLAMA_MODEL=qwen2.5:1.5b
       - GRAMINE_MODE=direct

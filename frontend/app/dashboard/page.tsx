@@ -205,7 +205,76 @@ function StatCard({ label, value, sub, icon: Icon, trend }: {
 
 // ── Overview tab ──────────────────────────────────────────────────────────────
 
-function OverviewTab({ jobs, providers, loading }: { jobs: Job[]; providers: Provider[]; loading: boolean }) {
+// ── Escrow card ───────────────────────────────────────────────────────────────
+
+const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL ?? 'http://localhost:7300';
+
+function EscrowCard({ walletAddress }: { walletAddress: string | null }) {
+  const [amount, setAmount] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'err'>('idle');
+  const [msg, setMsg] = useState('');
+
+  async function handleDeposit() {
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return;
+    setStatus('loading');
+    setMsg('');
+    try {
+      const res = await fetch('/api/escrow/deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: String(Math.floor(Number(amount))) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Deposit failed');
+      setStatus('ok');
+      setMsg(`Deposited! TX: ${data.tx_id}`);
+      setAmount('');
+    } catch (e: any) {
+      setStatus('err');
+      setMsg(e.message);
+    }
+  }
+
+  return (
+    <div className="border border-white/10 rounded-2xl p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Lock className="w-4 h-4 text-purple-400" />
+        <h2 className="text-sm font-semibold text-white">Escrow Balance</h2>
+        <span className="text-xs text-white/30 ml-auto">Lock DUST for inference payments</span>
+      </div>
+      <p className="text-xs text-white/40">
+        Deposit DUST once — every inference auto-deducts from your escrow balance.
+        100 DUST per request.
+      </p>
+      {!walletAddress ? (
+        <p className="text-xs text-yellow-400/70">Connect your wallet to deposit.</p>
+      ) : (
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min="1"
+            placeholder="Amount (DUST)"
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-purple-500/50"
+          />
+          <button
+            onClick={handleDeposit}
+            disabled={status === 'loading' || !amount}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {status === 'loading' ? 'Depositing…' : 'Deposit'}
+          </button>
+        </div>
+      )}
+      {msg && (
+        <p className={`text-xs ${status === 'ok' ? 'text-green-400' : 'text-red-400'}`}>{msg}</p>
+      )}
+    </div>
+  );
+}
+
+function OverviewTab({ jobs, providers, loading, walletAddress }: { jobs: Job[]; providers: Provider[]; loading: boolean; walletAddress: string | null }) {
   const completed = jobs.filter(j => j.status === 1);
   const totalDust = completed.reduce((s, j) => s + j.amount, 0);
   const successRate = jobs.length ? Math.round((completed.length / jobs.length) * 100) : 0;
@@ -221,6 +290,9 @@ function OverviewTab({ jobs, providers, loading }: { jobs: Job[]; providers: Pro
         <StatCard label="Total Spent" value={loading ? '—' : `${totalDust} DUST`} icon={Zap} />
         <StatCard label="Active Providers" value={loading ? '—' : providers.length} icon={Cpu} trend="up" />
       </div>
+
+      {/* Escrow */}
+      <EscrowCard walletAddress={walletAddress} />
 
       {/* Recent activity */}
       <div>
@@ -627,10 +699,11 @@ export default function DashboardPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (wallet?: string | null) => {
     setLoading(true);
     try {
-      const jobsUrl = walletAddress ? `/api/jobs?wallet=${encodeURIComponent(walletAddress)}` : '/api/jobs';
+      const w = wallet ?? walletAddress;
+      const jobsUrl = w ? `/api/jobs?wallet=${encodeURIComponent(w)}` : '/api/jobs';
       const [pRes, jRes] = await Promise.all([fetch('/api/providers'), fetch(jobsUrl)]);
       if (pRes.ok) setProviders(await pRes.json());
       if (jRes.ok) setJobs(await jRes.json());
@@ -638,7 +711,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [walletAddress]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -658,9 +731,9 @@ export default function DashboardPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <WalletButton onWalletChange={setWalletAddress} />
+            <WalletButton onWalletChange={(addr) => { setWalletAddress(addr); load(addr); }} />
             <button
-              onClick={load}
+              onClick={() => load()}
               disabled={loading}
               className="p-2 text-white/30 hover:text-white/70 hover:bg-white/5 rounded-lg transition-colors disabled:opacity-40"
             >
@@ -671,7 +744,7 @@ export default function DashboardPage() {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6">
-          {tab === 'overview' && <OverviewTab jobs={jobs} providers={providers} loading={loading} />}
+          {tab === 'overview' && <OverviewTab jobs={jobs} providers={providers} loading={loading} walletAddress={walletAddress} />}
           {tab === 'activity' && <ActivityTab jobs={jobs} loading={loading} />}
           {tab === 'models' && <ModelsTab providers={providers} loading={loading} />}
           {tab === 'keys' && <KeysTab walletAddress={walletAddress} />}

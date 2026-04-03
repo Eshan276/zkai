@@ -256,18 +256,42 @@ def _deduct_balance_async(job_id: str, wallet_address: str):
         return
 
     price = int(os.environ.get("ZKAI_PRICE_PER_REQUEST", "1"))
+    provider_id = _get_provider_id()
 
     def _deduct():
         try:
-            _http.post(
+            r = _http.post(
                 f"{bridge_url}/payment/deduct-balance",
-                json={"job_id": job_id, "wallet_address": wallet_address, "amount": str(price)},
+                json={
+                    "job_id": job_id,
+                    "wallet_address": wallet_address,
+                    "provider_id": provider_id,
+                    "amount": str(price),
+                },
                 timeout=120,
             )
+            print(f"[api] deduct-balance: {r.status_code} {r.text[:120]}")
         except Exception as e:
             print(f"[api] Warning: balance deduction failed: {e}")
 
     threading.Thread(target=_deduct, daemon=True).start()
+
+
+def _get_provider_id() -> str:
+    """Load provider ID from .provider_id file written by zkai register."""
+    import json as _json
+    paths = [
+        "/app/.provider_id",
+        "/provider/.provider_id",
+        os.path.join(os.path.dirname(__file__), ".provider_id"),
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            try:
+                return _json.loads(open(p).read())["provider_id"]
+            except Exception:
+                pass
+    return "0" * 64
 
 
 if __name__ == "__main__":

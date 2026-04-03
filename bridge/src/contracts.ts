@@ -109,11 +109,13 @@ export async function deposit(amount: string): Promise<string> {
 
 export async function deductBalance(
   walletAddress: string,
+  providerId: string,
   jobId: string,
   amount: string,
 ): Promise<string> {
   return callCircuit('PaymentEscrow', 'deductBalance', [
     toBytes32(walletAddress),
+    toBytes32(providerId),
     toBytes32(jobId),
     BigInt(amount),
   ]);
