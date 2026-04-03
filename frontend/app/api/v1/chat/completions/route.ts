@@ -17,9 +17,6 @@ interface Provider {
   active: boolean;
 }
 
-// Bridge URL — the ZKai bridge has direct on-chain access
-const BRIDGE_URL = (process.env.ZKAI_BRIDGE_URL ?? 'http://localhost:7300').replace(/\/$/, '');
-
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 async function verifyKey(key: string): Promise<string | null> {
@@ -32,23 +29,14 @@ async function verifyKey(key: string): Promise<string | null> {
 
 // ── Provider selection ────────────────────────────────────────────────────────
 
-// Cache providers for 30s
-let _providerCache: { providers: Provider[]; at: number } | null = null;
-
 async function getProviders(): Promise<Provider[]> {
-  const now = Date.now();
-  if (_providerCache && now - _providerCache.at < 30_000) {
-    return _providerCache.providers;
-  }
-  const res = await fetch(`${BRIDGE_URL}/providers`, {
-    next: { revalidate: 0 },
-    // @ts-ignore
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`Bridge /providers returned ${res.status}`);
-  const providers: Provider[] = await res.json();
-  _providerCache = { providers, at: now };
-  return providers;
+  const rows = await sql`
+    SELECT id, endpoint, model, price, reputation
+    FROM providers
+    WHERE active = TRUE
+    ORDER BY reputation DESC
+  `;
+  return rows as Provider[];
 }
 
 function pickProvider(providers: Provider[], model: string): Provider | null {

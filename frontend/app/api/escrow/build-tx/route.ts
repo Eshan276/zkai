@@ -10,6 +10,9 @@
  * Browser then calls:
  *   connectedAPI.balanceUnsealedTransaction(tx)  → balanced tx hex
  *   connectedAPI.submitTransaction(balanced.tx)
+ *
+ * Proving is done server-side via a centralized proof server running in the VPC
+ * (set PROOF_SERVER_URL env var — accessible from Vercel via private networking).
  */
 
 import { NextResponse } from 'next/server';
@@ -28,7 +31,6 @@ const INDEXER_WS = 'wss://indexer.preprod.midnight.network/api/v3/graphql/ws';
 const PROOF_SERVER_URL = process.env.PROOF_SERVER_URL ?? 'http://localhost:6300';
 const ESCROW_ADDRESS = process.env.NEXT_PUBLIC_ESCROW_CONTRACT!;
 
-// Find compiled contract relative to this route file (works in both dev and prod)
 const COMPILED_DIR = path.resolve(process.cwd(), '..', 'deploy', 'compiled');
 
 function loadCompiledContract() {
@@ -67,7 +69,6 @@ export async function POST(req: Request) {
     const publicDataProvider = indexerPublicDataProvider(INDEXER_HTTP, INDEXER_WS);
     const proofProvider = httpClientProofProvider(PROOF_SERVER_URL, zkConfigProvider);
 
-    // CoinPublicKey and EncPublicKey are bech32 strings in ledger-v8 — pass them as-is.
     // Fetch current contract + zswap state from indexer
     const states = await publicDataProvider.queryZSwapAndContractState(ESCROW_ADDRESS as any);
     if (!states) {
@@ -91,10 +92,9 @@ export async function POST(req: Request) {
       encPublicKey,
     );
 
-    // Prove the tx using the proof server
+    // Prove via centralized proof server in VPC
     const unboundTx = await proofProvider.proveTx(callTxData.private.unprovenTx);
 
-    // Serialize and return as hex
     const txHex = Buffer.from(unboundTx.serialize()).toString('hex');
     return NextResponse.json({ tx: txHex });
 

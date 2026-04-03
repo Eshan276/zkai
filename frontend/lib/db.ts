@@ -50,4 +50,17 @@ export async function initSchema() {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_jobs_wallet ON jobs(wallet_address)
   `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS providers (
+      id             TEXT PRIMARY KEY,
+      endpoint       TEXT NOT NULL,
+      model          TEXT NOT NULL DEFAULT '',
+      price          INTEGER NOT NULL DEFAULT 0,
+      reputation     REAL NOT NULL DEFAULT 0.5,
+      active         BOOLEAN NOT NULL DEFAULT TRUE,
+      registered_at  TIMESTAMPTZ DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
 }

@@ -24,6 +24,10 @@ _PROVIDER_ID_FILE = ".provider_id"
 _ENCLAVE_URL = "http://127.0.0.1:8080"
 _BRIDGE_URL = "http://127.0.0.1:7300"
 
+# Central auth/gateway server — set via zkai init or ZKAI_AUTH_URL env var
+import os as _os
+_AUTH_URL = _os.environ.get("ZKAI_AUTH_URL", "").rstrip("/")
+
 
 # ── register ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +86,21 @@ def register(
     result = resp.json()
     tx_id = result.get("tx_id", "submitted")
 
+    # Register in central DB so Vercel gateway can discover this provider
+    if _AUTH_URL:
+        try:
+            r = requests.post(
+                f"{_AUTH_URL}/api/providers/register",
+                json={"provider_id": provider_id, "endpoint": endpoint, "model": model, "price": price},
+                timeout=15,
+            )
+            if r.ok:
+                console.print("  [green]Registered in central gateway DB[/green]")
+            else:
+                console.print(f"  [yellow]Warning: gateway DB registration failed: {r.text[:80]}[/yellow]")
+        except Exception as e:
+            console.print(f"  [yellow]Warning: could not reach gateway ({e})[/yellow]")
+
     # Save provider_id locally
     pid_file = compose_dir(repo) / _PROVIDER_ID_FILE
     pid_file.write_text(json.dumps({
@@ -127,6 +146,17 @@ def deregister(repo_dir: str | None):
         data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         err_console.print(f"[red]Deregistration failed:[/red] {data.get('error', resp.text)}")
         raise typer.Exit(1)
+
+    # Remove from central DB
+    if _AUTH_URL:
+        try:
+            requests.post(
+                f"{_AUTH_URL}/api/providers/deregister",
+                json={"provider_id": provider_id},
+                timeout=10,
+            )
+        except Exception:
+            pass
 
     console.print("[green]Provider deregistered.[/green]")
     pid_file.unlink(missing_ok=True)

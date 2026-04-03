@@ -24,6 +24,7 @@ services:
     environment:
       - BRIDGE_PORT=7300
       - PROOF_SERVER_URL=http://proof-server:6300
+      - ZKAI_AUTH_URL=${ZKAI_AUTH_URL:-https://zkai.vercel.app}
     ports:
       - "7300:7300"
     command: >

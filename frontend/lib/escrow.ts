@@ -5,19 +5,12 @@
  *
  * Flow:
  *  1. Get coin/enc public keys from Lace
- *  2. POST to /api/escrow/build-tx — server builds + proves the tx (Node.js only code)
+ *  2. POST to /api/escrow/build-tx — server builds + proves the tx via centralized proof server (VPC)
  *  3. connectedAPI.balanceUnsealedTransaction(txHex) — Lace adds inputs, user approves
  *  4. connectedAPI.submitTransaction(balanced.tx) — submitted from user's wallet
  */
 
-import type { ConnectedAPI, KeyMaterialProvider } from '@midnight-ntwrk/dapp-connector-api';
-import { FetchZkConfigProvider } from '@midnight-ntwrk/midnight-js-fetch-zk-config-provider';
-
-// ZK artifacts served from /public/zk/PaymentEscrow/
-const ZK_BASE_URL = (): string =>
-  typeof window !== 'undefined'
-    ? `${window.location.origin}/zk/PaymentEscrow`
-    : 'http://localhost:3000/zk/PaymentEscrow';
+import type { ConnectedAPI } from '@midnight-ntwrk/dapp-connector-api';
 
 export type EscrowAction = 'deposit' | 'withdraw';
 
@@ -31,7 +24,7 @@ export async function callEscrow(
   const coinPublicKey: string = (shieldedRaw as any).shieldedCoinPublicKey;
   const encPublicKey: string = (shieldedRaw as any).shieldedEncryptionPublicKey;
 
-  // Step 2: Server builds + proves the unbound tx
+  // Step 2: Server builds + proves the tx (proof server in VPC)
   const res = await fetch('/api/escrow/build-tx', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

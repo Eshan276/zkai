@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as contracts from '../contracts.js';
 
+const AUTH_URL = (process.env.ZKAI_AUTH_URL ?? '').replace(/\/$/, '');
+
 // Local provider cache — persisted to disk so it survives bridge restarts
 const PROVIDERS_FILE = process.env.PROVIDERS_FILE ?? '/app/providers.json';
 
@@ -59,6 +61,16 @@ export async function registryRoutes(app: FastifyInstance) {
       saveProviders(providers);
       console.log(`[registry] provider ${provider_id.slice(0, 8)}... saved to ${PROVIDERS_FILE}`);
 
+      // Also register in central Neon DB for Vercel gateway discovery
+      if (AUTH_URL) {
+        fetch(`${AUTH_URL}/api/providers/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider_id, endpoint, model, price }),
+        }).then(r => console.log(`[registry] central DB sync: ${r.status}`))
+          .catch(e => console.warn(`[registry] central DB sync failed: ${e.message}`));
+      }
+
       return { tx_id: txId };
     } catch (e: any) {
       console.error('[registry] registerProvider error:', e?.message ?? e);
@@ -78,6 +90,14 @@ export async function registryRoutes(app: FastifyInstance) {
       const providers = loadProviders();
       const existing = providers.find(p => p.id === provider_id);
       if (existing) { existing.active = false; saveProviders(providers); }
+
+      if (AUTH_URL) {
+        fetch(`${AUTH_URL}/api/providers/deregister`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider_id }),
+        }).catch(() => {});
+      }
 
       return { tx_id: txId };
     } catch (e: any) {
