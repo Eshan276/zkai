@@ -1,0 +1,11 @@
+[
+  {
+    "id": "15925504c5e747a27b2af067fc36e0666cf1ffbe185f88ad254d242ab24e4214",
+    "endpoint": "https://blah-combined-forecast-collectors.trycloudflare.com",
+    "model": "qwen2.5-1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": true,
+    "registered_at": "2026-04-03T09:00:00.000Z"
+  }
+]

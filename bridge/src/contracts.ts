@@ -69,47 +69,6 @@ async function callCircuit(
 
 // ── ProviderRegistry ───────────────────────────────────────────────────────
 
-export async function fetchProviders(): Promise<any[]> {
-  const walletCtx = await getWalletContext();
-  const zkConfigPath = path.join(compiledDir, 'ProviderRegistry');
-  const providers = await createProviders(walletCtx, zkConfigPath);
-  const compiledContract = await loadCompiledContract('ProviderRegistry');
-
-  const found = await findDeployedContract(providers, {
-    compiledContract,
-    contractAddress: ADDRESSES.ProviderRegistry,
-    privateStateId: 'providerregistry-bridge-state',
-    initialPrivateState: {},
-  });
-
-  const ledger = (found as any).ledger as any;
-  if (!ledger) return [];
-
-  // provider_active is a Map<Bytes<32>, Boolean> — iterate entries
-  const activeMap: Map<string, boolean> = ledger.provider_active ?? new Map();
-  const endpointMap: Map<string, string> = ledger.provider_endpoint ?? new Map();
-  const modelMap: Map<string, string> = ledger.provider_model ?? new Map();
-  const priceMap: Map<string, bigint> = ledger.provider_price ?? new Map();
-  const repMap: Map<string, bigint> = ledger.provider_reputation ?? new Map();
-
-  const result: any[] = [];
-  for (const [keyBytes, active] of activeMap.entries()) {
-    if (!active) continue;
-    const id = Buffer.isBuffer(keyBytes)
-      ? (keyBytes as Buffer).toString('hex')
-      : keyBytes.toString('hex');
-    result.push({
-      id,
-      endpoint: endpointMap.get(keyBytes) ?? '',
-      model: modelMap.get(keyBytes) ?? '',
-      price: Number(priceMap.get(keyBytes) ?? 0n),
-      reputation: Number(repMap.get(keyBytes) ?? 500000n) / 1_000_000,
-      active: true,
-    });
-  }
-  return result;
-}
-
 export async function registerProvider(
   providerId: string,
   pubkey: string,

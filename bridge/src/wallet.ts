@@ -89,6 +89,10 @@ async function initWallet(seed: string) {
   return { wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore };
 }
 
+export function isWalletReady(): boolean {
+  return _walletCtx !== null;
+}
+
 export async function getWalletContext(): Promise<WalletContext> {
   if (_walletCtx) return _walletCtx;
   throw new Error('Wallet not initialized. Call startWallet() first.');
@@ -109,14 +113,27 @@ export async function startWallet(): Promise<WalletContext> {
   _walletCtx = await initWallet(seed);
 
   console.log('Syncing with Midnight preprod...');
+  let lastState: string = '';
   await Rx.firstValueFrom(
     _walletCtx.wallet.state().pipe(
       Rx.throttleTime(5000),
-      Rx.tap(() => process.stdout.write('.')),
+      Rx.tap((s: any) => {
+        const dust = s.dust?.balance?.(new Date()) ?? 0n;
+        const summary = `isSynced=${s.isSynced} dust=${dust.toString()}`;
+        if (summary !== lastState) {
+          console.log(`[wallet:sync] ${summary}`);
+          lastState = summary;
+        } else {
+          process.stdout.write('.');
+        }
+      }),
       Rx.filter((s: any) => s.isSynced),
       Rx.timeout(300000),
     )
-  );
+  ).catch((e: any) => {
+    console.error('[wallet:sync] timed out or failed:', e?.message ?? e);
+    throw e;
+  });
   const syncedState = await _walletCtx.wallet.waitForSyncedState();
   console.log('\nWallet synced.');
 
