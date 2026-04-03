@@ -14,13 +14,19 @@ export async function GET(req: Request) {
   }
 
   const rows = await sql`
-    SELECT wallet_address FROM api_keys
-    WHERE key = ${key} AND revoked = FALSE
+    SELECT ak.wallet_address, u.coin_public_key
+    FROM api_keys ak
+    JOIN users u ON u.wallet_address = ak.wallet_address
+    WHERE ak.key = ${key} AND ak.revoked = FALSE
   `;
 
   if (rows.length === 0) {
     return NextResponse.json({ valid: false });
   }
 
-  return NextResponse.json({ valid: true, wallet_address: rows[0].wallet_address });
+  return NextResponse.json({
+    valid: true,
+    wallet_address: rows[0].wallet_address,
+    coin_public_key: rows[0].coin_public_key ?? null,
+  });
 }

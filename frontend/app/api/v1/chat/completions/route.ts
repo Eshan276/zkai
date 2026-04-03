@@ -19,12 +19,15 @@ interface Provider {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
-async function verifyKey(key: string): Promise<string | null> {
+async function verifyKey(key: string): Promise<{ walletAddress: string; coinPublicKey: string | null } | null> {
   const rows = await sql`
-    SELECT wallet_address FROM api_keys
-    WHERE key = ${key} AND revoked = FALSE
+    SELECT ak.wallet_address, u.coin_public_key
+    FROM api_keys ak
+    JOIN users u ON u.wallet_address = ak.wallet_address
+    WHERE ak.key = ${key} AND ak.revoked = FALSE
   `;
-  return rows.length > 0 ? rows[0].wallet_address : null;
+  if (rows.length === 0) return null;
+  return { walletAddress: rows[0].wallet_address, coinPublicKey: rows[0].coin_public_key ?? null };
 }
 
 // ── Provider selection ────────────────────────────────────────────────────────
@@ -59,10 +62,11 @@ export async function POST(req: Request) {
   if (!apiKey) {
     return NextResponse.json({ error: 'Missing API key' }, { status: 401 });
   }
-  const walletAddress = await verifyKey(apiKey);
-  if (!walletAddress) {
+  const keyData = await verifyKey(apiKey);
+  if (!keyData) {
     return NextResponse.json({ error: 'Invalid or revoked API key' }, { status: 401 });
   }
+  const { walletAddress, coinPublicKey } = keyData;
 
   // 2. Parse body
   let body: any;
@@ -100,6 +104,7 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json',
         'X-API-Key': apiKey,
         'X-Wallet-Address': walletAddress,
+        ...(coinPublicKey ? { 'X-Coin-Public-Key': coinPublicKey } : {}),
       },
       body: JSON.stringify(body),
       // @ts-ignore — Node 18+ supports this

@@ -7,5 +7,14 @@
     "reputation": 0.5,
     "active": true,
     "registered_at": "2026-04-03T09:00:00.000Z"
+  },
+  {
+    "id": "776a7a1f15f4b8895dba010f019d61bb3afb8544eee05003af52b0a05ec9ffbb",
+    "endpoint": "https://blah-combined-forecast-collectors.trycloudflare.com",
+    "model": "qwen2.5-1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": true,
+    "registered_at": "2026-04-03T15:12:36.728Z"
   }
 ]

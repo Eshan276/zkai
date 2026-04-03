@@ -10,6 +10,7 @@ export async function initSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS users (
       wallet_address TEXT PRIMARY KEY,
+      coin_public_key TEXT,
       created_at     TIMESTAMPTZ DEFAULT NOW()
     )
   `;

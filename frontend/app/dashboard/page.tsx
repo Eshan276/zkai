@@ -544,7 +544,7 @@ function ModelsTab({ providers, loading }: { providers: Provider[]; loading: boo
 
 interface ApiKey { key: string; created_at: string; revoked: boolean; label: string; }
 
-function KeysTab({ walletAddress }: { walletAddress: string | null }) {
+function KeysTab({ walletAddress, connectedAPI }: { walletAddress: string | null; connectedAPI: ConnectedAPI | null }) {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(false);
   const [issuing, setIssuing] = useState(false);
@@ -577,11 +577,20 @@ function KeysTab({ walletAddress }: { walletAddress: string | null }) {
       });
       const { nonce } = await chalRes.json();
 
-      // 2. Verify (no full sig yet — wallet address is the proof of connection)
+      // 2. Get coinPublicKey from Lace for escrow deduction lookups
+      let coin_public_key: string | null = null;
+      if (connectedAPI) {
+        try {
+          const shielded = await connectedAPI.getShieldedAddresses();
+          coin_public_key = (shielded as any).shieldedCoinPublicKey ?? null;
+        } catch {}
+      }
+
+      // 3. Verify (no full sig yet — wallet address is the proof of connection)
       const verRes = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet_address: walletAddress, nonce }),
+        body: JSON.stringify({ wallet_address: walletAddress, nonce, coin_public_key }),
       });
       if (!verRes.ok) {
         const e = await verRes.json();
@@ -772,7 +781,7 @@ export default function DashboardPage() {
           {tab === 'overview' && <OverviewTab jobs={jobs} providers={providers} loading={loading} walletAddress={walletAddress} connectedAPI={connectedAPI} />}
           {tab === 'activity' && <ActivityTab jobs={jobs} loading={loading} />}
           {tab === 'models' && <ModelsTab providers={providers} loading={loading} />}
-          {tab === 'keys' && <KeysTab walletAddress={walletAddress} />}
+          {tab === 'keys' && <KeysTab walletAddress={walletAddress} connectedAPI={connectedAPI} />}
         </main>
       </div>
     </div>

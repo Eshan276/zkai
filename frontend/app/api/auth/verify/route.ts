@@ -13,7 +13,7 @@ import { sql } from '@/lib/db';
 import { randomBytes } from 'crypto';
 
 export async function POST(req: Request) {
-  const { wallet_address, nonce } = await req.json();
+  const { wallet_address, nonce, coin_public_key } = await req.json();
 
   if (!wallet_address || !nonce) {
     return NextResponse.json({ error: 'wallet_address and nonce required' }, { status: 400 });
@@ -34,10 +34,10 @@ export async function POST(req: Request) {
   // Consume the nonce (one-time use)
   await sql`DELETE FROM challenges WHERE nonce = ${nonce}`;
 
-  // Upsert user
+  // Upsert user — store coinPublicKey for escrow deduction lookups
   await sql`
-    INSERT INTO users (wallet_address) VALUES (${wallet_address})
-    ON CONFLICT (wallet_address) DO NOTHING
+    INSERT INTO users (wallet_address, coin_public_key) VALUES (${wallet_address}, ${coin_public_key ?? null})
+    ON CONFLICT (wallet_address) DO UPDATE SET coin_public_key = EXCLUDED.coin_public_key
   `;
 
   // Issue API key

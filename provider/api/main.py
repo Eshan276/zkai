@@ -10,7 +10,7 @@ import threading
 import requests as _http
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Security
+from fastapi import FastAPI, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
@@ -162,6 +162,7 @@ def infer(
 
 @app.post("/v1/chat/completions")
 async def chat_completions(
+    request: Request,
     req: ChatCompletionRequest,
     wallet_address: str | None = Security(require_api_key),
 ):
@@ -171,6 +172,9 @@ async def chat_completions(
     since the gateway is our own infra; the TEE still protects inference).
     """
     job_id = uuid.uuid4().hex + uuid.uuid4().hex
+
+    # X-Coin-Public-Key is the shielded key used as the escrow balance map key
+    coin_public_key = request.headers.get("x-coin-public-key") or wallet_address or ""
 
     # Build prompt from messages
     prompt = _messages_to_prompt(req.messages)
@@ -184,7 +188,7 @@ async def chat_completions(
     attestation_hash = att["report_hash"]
 
     _post_attestation_async(job_id, attestation_hash, att.get("model_hash", "0" * 64))
-    _deduct_balance_async(job_id, wallet_address or "")
+    _deduct_balance_async(job_id, coin_public_key)
 
     return {
         "id": f"chatcmpl-{job_id[:8]}",

@@ -174,9 +174,16 @@ def _step_seed(repo: Path):
         _save_seed(sp, seed)
 
     console.print()
-    console.print("[bold]Fund your wallet:[/bold] https://faucet.preprod.midnight.network/")
-    console.print("Request 1000 tNight to the [bold]unshielded address[/bold] shown above.")
-    console.print("Wait ~2 minutes for it to arrive, then continue.\n")
+    console.print(Panel(
+        "[bold yellow]Fund your bridge wallet[/bold yellow]\n\n"
+        "Your bridge wallet pays gas for on-chain transactions (deducting consumer\n"
+        "balances, posting attestations, etc). This is your [bold]gas reserve[/bold] —\n"
+        "you recover it over time via the price you charge per request.\n\n"
+        "[bold]Faucet:[/bold] https://faucet.preprod.midnight.network/\n"
+        "Request [bold]10,000 tNight[/bold] to the [bold]unshielded address[/bold] shown above.\n\n"
+        "[dim]Each on-chain call costs ~10–50 DUST in gas. 10,000 DUST covers ~200–1000 requests.[/dim]",
+        border_style="yellow",
+    ))
     Confirm.ask("Press Enter once your wallet is funded", default=True)
 
 
@@ -220,7 +227,9 @@ def _print_next_steps(repo: Path):
         "2. Wait for [bold]Wallet synced[/bold] in logs (2-5 min)\n"
         "3. [cyan]zkai register --endpoint http://YOUR_IP:8080[/cyan]        Register on-chain (once)\n"
         "4. [cyan]zkai status[/cyan]                                         Confirm everything is healthy\n"
-        "5. Consumers get API keys from the ZKai dashboard — no action needed here\n",
+        "5. Consumers get API keys from the ZKai dashboard — no action needed here\n\n"
+        "[dim]Tip: keep your bridge wallet topped up with DUST — it pays gas for every\n"
+        "deductBalance call. Set your price_per_request to cover gas costs.[/dim]\n",
         border_style="green",
     ))
 
