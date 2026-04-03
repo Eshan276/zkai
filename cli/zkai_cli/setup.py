@@ -4,7 +4,6 @@ zkai keygen — wallet keygen (wraps wallet/keygen.mjs)
 """
 
 import re
-import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -133,7 +132,7 @@ def run_init(repo_dir: str | None):
     console.print(f"\n[dim]Repo:[/dim] {repo}\n")
 
     _step_seed(repo)
-    _step_api_keys(repo)
+    _step_auth_url(repo)
     _print_next_steps(repo)
 
 
@@ -188,28 +187,28 @@ def _save_seed(sp: Path, seed: str):
     console.print(f"\n[green]Seed saved to {sp}[/green]")
 
 
-def _step_api_keys(repo: Path):
-    console.rule("[bold]Step 2 — API Keys for Consumers[/bold]")
+def _step_auth_url(repo: Path):
+    console.rule("[bold]Step 2 — Central Auth Server[/bold]")
 
     ef = env_file(repo)
-    existing_keys = _read_env_keys(ef)
+    existing = _read_env_var(ef, "ZKAI_AUTH_URL")
 
-    if existing_keys:
-        console.print(f"[green]{len(existing_keys)} API key(s) already configured.[/green]")
-        if not Confirm.ask("Generate additional keys?", default=False):
+    if existing:
+        console.print(f"[green]ZKAI_AUTH_URL already set:[/green] {existing}")
+        if not Confirm.ask("Update it?", default=False):
             return
 
-    n = int(Prompt.ask("How many API keys to generate?", default="3"))
-    new_keys = [secrets.token_hex(32) for _ in range(n)]
-    all_keys = list(existing_keys) + new_keys
+    console.print(
+        "Consumers get their API keys from the ZKai dashboard.\n"
+        "Your enclave verifies keys against the central auth server.\n"
+    )
+    url = Prompt.ask(
+        "Enter your ZKai auth server URL",
+        default="http://192.168.0.103:3000",
+    ).strip().rstrip("/")
 
-    _write_env_keys(ef, all_keys)
-
-    console.print(f"\n[green]{n} new key(s) added[/green] (saved to {ef}):\n")
-    for k in new_keys:
-        console.print(f"  [bold]{k}[/bold]")
-    console.print()
-    console.print("Share one key per consumer. Rotate anytime with [bold]zkai keys rotate[/bold].")
+    _write_env_var(ef, "ZKAI_AUTH_URL", url)
+    console.print(f"\n[green]ZKAI_AUTH_URL set to {url}[/green] (saved to {ef})")
 
 
 def _print_next_steps(repo: Path):
@@ -221,35 +220,34 @@ def _print_next_steps(repo: Path):
         "2. Wait for [bold]Wallet synced[/bold] in logs (2-5 min)\n"
         "3. [cyan]zkai register --endpoint http://YOUR_IP:8080[/cyan]        Register on-chain (once)\n"
         "4. [cyan]zkai status[/cyan]                                         Confirm everything is healthy\n"
-        "5. Share your API keys with consumers\n",
+        "5. Consumers get API keys from the ZKai dashboard — no action needed here\n",
         border_style="green",
     ))
 
 
 # ── .env helpers ──────────────────────────────────────────────────────────────
 
-def _read_env_keys(ef: Path) -> list[str]:
+def _read_env_var(ef: Path, key: str) -> str | None:
     if not ef.exists():
-        return []
+        return None
     for line in ef.read_text().splitlines():
         line = line.strip()
-        if line.startswith("ZKAI_API_KEYS="):
-            val = line[len("ZKAI_API_KEYS="):]
-            return [k for k in val.split(",") if k.strip()]
-    return []
+        if line.startswith(f"{key}="):
+            return line[len(f"{key}="):]
+    return None
 
 
-def _write_env_keys(ef: Path, keys: list[str]):
+def _write_env_var(ef: Path, key: str, value: str):
     ef.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     replaced = False
     if ef.exists():
         for line in ef.read_text().splitlines():
-            if line.startswith("ZKAI_API_KEYS="):
-                lines.append(f"ZKAI_API_KEYS={','.join(keys)}")
+            if line.startswith(f"{key}="):
+                lines.append(f"{key}={value}")
                 replaced = True
             else:
                 lines.append(line)
     if not replaced:
-        lines.append(f"ZKAI_API_KEYS={','.join(keys)}")
+        lines.append(f"{key}={value}")
     ef.write_text("\n".join(lines) + "\n")

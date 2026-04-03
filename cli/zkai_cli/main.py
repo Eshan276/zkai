@@ -11,7 +11,7 @@ Commands:
   zkai status        Show container + wallet health
   zkai register      Register provider on-chain (one-time)
   zkai deregister    Remove provider from on-chain registry
-  zkai keys          Manage API keys (add, list, remove)
+  zkai keys          Show how API keys work (managed via dashboard)
   zkai info          Print provider ID, endpoint, pubkey
 """
 
@@ -144,14 +144,7 @@ def keys(
     repo_dir: str = typer.Option(None, "--dir", "-d", help="zkai repo root"),
     count: int = typer.Option(1, "--count", "-n", help="Number of keys to add/rotate"),
 ):
-    """Manage API keys for your consumers.
-
-    \b
-    zkai keys list             Show all configured keys
-    zkai keys add              Generate and add N new key(s)
-    zkai keys remove <key>     Remove a specific key
-    zkai keys rotate           Replace all keys with new ones
-    """
+    """Show how API key management works (now centralized via dashboard)."""
     _keys.run(action, key_value, repo_dir=repo_dir, count=count)
 
 

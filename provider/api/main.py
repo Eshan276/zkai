@@ -1,14 +1,15 @@
 """
 ZKai Provider API — runs inside Gramine TEE enclave.
-Endpoints: /pubkey  /infer  /attestation  /health
+Endpoints: /pubkey  /infer  /v1/chat/completions  /attestation  /health
 """
 
 import os
+import time
 import uuid
 import threading
 import requests as _http
-from contextlib import asynccontextmanager
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
@@ -21,12 +22,12 @@ import enclave
 _API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Central auth server URL — set ZKAI_AUTH_URL to your Next.js deployment
-# e.g. https://zkai.vercel.app  or  http://localhost:3000
+# e.g. https://zkai.vercel.app  or  http://192.168.0.103:3000
 _AUTH_URL = os.environ.get("ZKAI_AUTH_URL", "").rstrip("/")
 
 # 60s in-memory cache: key -> (wallet_address, expires_at)
 _key_cache: dict[str, tuple[str, float]] = {}
-import time
+
 
 def _verify_key_remote(key: str) -> str | None:
     """Returns wallet_address if valid, None if not. Caches for 60s."""
@@ -51,9 +52,9 @@ def _verify_key_remote(key: str) -> str | None:
         print(f"[auth] verify-key request failed: {e}")
     return None
 
+
 def require_api_key(key: str | None = Security(_API_KEY_HEADER)) -> str | None:
     """Returns wallet_address of the caller, or raises 401."""
-    # No auth URL configured → open (dev mode)
     if not _AUTH_URL:
         return None
     if not key:
@@ -64,12 +65,27 @@ def require_api_key(key: str | None = Security(_API_KEY_HEADER)) -> str | None:
     return wallet
 
 
+def _wallet_from_header_or_key(
+    req_wallet: str | None,
+    key: str | None,
+) -> str | None:
+    """
+    When called via the gateway, X-Wallet-Address is forwarded directly.
+    When called directly (SDK), derive from key verification.
+    """
+    if req_wallet:
+        return req_wallet
+    if key and _AUTH_URL:
+        return _verify_key_remote(key)
+    return None
+
+
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     enclave.init_enclave()
-    mode = "open (dev)" if not _API_KEYS else f"{len(_API_KEYS)} key(s) configured"
+    mode = "open (dev)" if not _AUTH_URL else f"centralized auth @ {_AUTH_URL}"
     print(f"[api] Provider ready. Auth: {mode}")
     yield
 
@@ -85,27 +101,40 @@ class InferRequest(BaseModel):
 
 
 class InferResponse(BaseModel):
-    job_id: str              # server-generated job ID (used for on-chain tracking)
+    job_id: str              # server-generated job ID
     encrypted_response: str  # hex(nonce + ciphertext + tag)
     attestation_hash: str    # SHA256 of attestation report
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str = ""
+    messages: list[ChatMessage]
+    stream: bool = False
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/pubkey")
 def get_pubkey():
-    """Returns enclave X25519 public key. Client encrypts prompt with this."""
+    """Returns enclave X25519 public key."""
     return {"pubkey": enclave.get_pubkey_hex()}
 
 
 @app.post("/infer", response_model=InferResponse)
-def infer(req: InferRequest, wallet_address: str | None = Security(require_api_key)):
+def infer(
+    req: InferRequest,
+    wallet_address: str | None = Security(require_api_key),
+):
     """
-    Accepts encrypted prompt, runs inference inside TEE, returns encrypted response.
-    Operator CANNOT read prompts or responses.
+    Encrypted inference endpoint (used by ZKai SDK directly).
+    Accepts encrypted prompt, returns encrypted response.
     """
-    # Generate a unique job ID for this request
-    job_id = uuid.uuid4().hex + uuid.uuid4().hex  # 64 hex chars = 32 bytes
+    job_id = uuid.uuid4().hex + uuid.uuid4().hex
 
     try:
         prompt = enclave.decrypt_prompt(req.client_pubkey, req.encrypted_prompt)
@@ -121,7 +150,6 @@ def infer(req: InferRequest, wallet_address: str | None = Security(require_api_k
     att = enclave.get_attestation()
     attestation_hash = att["report_hash"]
 
-    # Post attestation + deduct balance on Midnight chain (non-blocking, provider-side)
     _post_attestation_async(job_id, attestation_hash, att.get("model_hash", "0" * 64))
     _deduct_balance_async(job_id, wallet_address or "")
 
@@ -132,9 +160,55 @@ def infer(req: InferRequest, wallet_address: str | None = Security(require_api_k
     )
 
 
+@app.post("/v1/chat/completions")
+async def chat_completions(
+    req: ChatCompletionRequest,
+    wallet_address: str | None = Security(require_api_key),
+):
+    """
+    OpenAI-compatible endpoint — used by the ZKai gateway.
+    Plain-text in/out (encryption is gateway→enclave channel, not required here
+    since the gateway is our own infra; the TEE still protects inference).
+    """
+    job_id = uuid.uuid4().hex + uuid.uuid4().hex
+
+    # Build prompt from messages
+    prompt = _messages_to_prompt(req.messages)
+
+    try:
+        response_text = enclave.run_inference(prompt)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    att = enclave.get_attestation()
+    attestation_hash = att["report_hash"]
+
+    _post_attestation_async(job_id, attestation_hash, att.get("model_hash", "0" * 64))
+    _deduct_balance_async(job_id, wallet_address or "")
+
+    return {
+        "id": f"chatcmpl-{job_id[:8]}",
+        "object": "chat.completion",
+        "model": req.model or os.environ.get("OLLAMA_MODEL", "unknown"),
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": response_text},
+            "finish_reason": "stop",
+        }],
+        "usage": {
+            "prompt_tokens": len(prompt.split()),
+            "completion_tokens": len(response_text.split()),
+        },
+        "x_zkai": {
+            "job_id": job_id,
+            "attestation_hash": attestation_hash,
+        },
+    }
+
+
 @app.get("/attestation")
 def get_attestation():
-    """Full attestation report. SDK hashes this and compares to on-chain anchor."""
+    """Full attestation report."""
     return enclave.get_attestation()
 
 
@@ -145,8 +219,20 @@ def health():
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+def _messages_to_prompt(messages: list[ChatMessage]) -> str:
+    parts = []
+    for m in messages:
+        if m.role == "system":
+            parts.append(f"System: {m.content}")
+        elif m.role == "user":
+            parts.append(f"User: {m.content}")
+        elif m.role == "assistant":
+            parts.append(f"Assistant: {m.content}")
+    parts.append("Assistant:")
+    return "\n".join(parts)
+
+
 def _post_attestation_async(job_id: str, attestation_hash: str, model_hash: str):
-    """Fire-and-forget: post attestation to bridge in background thread."""
     bridge_url = os.environ.get("ZKAI_BRIDGE_URL")
     if not bridge_url:
         return
@@ -155,11 +241,7 @@ def _post_attestation_async(job_id: str, attestation_hash: str, model_hash: str)
         try:
             _http.post(
                 f"{bridge_url}/attestation/post-attestation",
-                json={
-                    "job_id": job_id,
-                    "attestation_hash": attestation_hash,
-                    "model_hash": model_hash,
-                },
+                json={"job_id": job_id, "attestation_hash": attestation_hash, "model_hash": model_hash},
                 timeout=10,
             )
         except Exception as e:
@@ -169,23 +251,17 @@ def _post_attestation_async(job_id: str, attestation_hash: str, model_hash: str)
 
 
 def _deduct_balance_async(job_id: str, wallet_address: str):
-    """Fire-and-forget: deduct inference cost from consumer's on-chain balance."""
     bridge_url = os.environ.get("ZKAI_BRIDGE_URL")
     if not bridge_url or not wallet_address:
         return
 
-    # Price per request — set ZKAI_PRICE_PER_REQUEST in env (DUST units)
     price = int(os.environ.get("ZKAI_PRICE_PER_REQUEST", "1"))
 
     def _deduct():
         try:
             _http.post(
                 f"{bridge_url}/payment/deduct-balance",
-                json={
-                    "job_id": job_id,
-                    "wallet_address": wallet_address,
-                    "amount": str(price),
-                },
+                json={"job_id": job_id, "wallet_address": wallet_address, "amount": str(price)},
                 timeout=120,
             )
         except Exception as e:

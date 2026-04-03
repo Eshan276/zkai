@@ -58,7 +58,8 @@ services:
       - HOST=0.0.0.0
       - PORT=8080
       - ZKAI_BRIDGE_URL=http://bridge:7300
-      - ZKAI_API_KEYS=${ZKAI_API_KEYS:-}
+      - ZKAI_AUTH_URL=http://192.168.0.103:3000
+      - ZKAI_PRICE_PER_REQUEST=${ZKAI_PRICE_PER_REQUEST:-1000}
     depends_on:
       bridge:
         condition: service_healthy
