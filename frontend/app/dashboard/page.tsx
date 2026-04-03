@@ -630,7 +630,8 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, jRes] = await Promise.all([fetch('/api/providers'), fetch('/api/jobs')]);
+      const jobsUrl = walletAddress ? `/api/jobs?wallet=${encodeURIComponent(walletAddress)}` : '/api/jobs';
+      const [pRes, jRes] = await Promise.all([fetch('/api/providers'), fetch(jobsUrl)]);
       if (pRes.ok) setProviders(await pRes.json());
       if (jRes.ok) setJobs(await jRes.json());
       setLastRefreshed(new Date());

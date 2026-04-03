@@ -136,6 +136,16 @@ export async function POST(req: Request) {
   }
 
   const responseBody = await providerRes.text();
+
+  // Log job to DB (fire and forget)
+  if (providerRes.ok) {
+    const jobData = (() => { try { return JSON.parse(responseBody); } catch { return null; } })();
+    const jobId = jobData?.x_zkai?.job_id ?? jobData?.id ?? crypto.randomUUID();
+    sql`INSERT INTO jobs (job_id, wallet_address, provider_id, amount, model)
+        VALUES (${jobId}, ${walletAddress}, ${provider.id}, ${provider.price}, ${model})
+        ON CONFLICT (job_id) DO NOTHING`.catch(() => {});
+  }
+
   return new Response(responseBody, {
     status: providerRes.status,
     headers: {

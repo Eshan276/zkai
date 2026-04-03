@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server';
-import { fetchProviders } from '@/lib/indexer';
-import { CONTRACTS } from '@/lib/contracts';
+
+const BRIDGE_URL = (process.env.ZKAI_BRIDGE_URL ?? 'http://localhost:7300').replace(/\/$/, '');
 
 export async function GET() {
-  if (!CONTRACTS.ProviderRegistry) {
-    return NextResponse.json([]);
-  }
   try {
-    const providers = await fetchProviders(CONTRACTS.ProviderRegistry);
-    return NextResponse.json(providers);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    const res = await fetch(`${BRIDGE_URL}/providers`, { next: { revalidate: 30 } });
+    if (!res.ok) return NextResponse.json([]);
+    return NextResponse.json(await res.json());
+  } catch {
+    return NextResponse.json([]);
   }
 }
