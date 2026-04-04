@@ -71,7 +71,7 @@ async function initWallet(seed: string) {
     provingServerUrl: new URL(CONFIG.proofServer),
     relayURL: new URL(CONFIG.node.replace(/^http/, 'ws')),
     txHistoryStorage: new NoOpTransactionHistoryStorage(),
-    costParameters: { additionalFeeOverhead: 300_000_000_000_000n, feeBlocksMargin: 5 },
+    costParameters: { additionalFeeOverhead: 100_000_000_000n, feeBlocksMargin: 5 },
   };
 
   const ShieldedWalletClass = ShieldedWallet(walletConfig);

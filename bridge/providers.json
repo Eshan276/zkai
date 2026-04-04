@@ -14,7 +14,34 @@
     "model": "qwen2.5-1.5b",
     "price": 100,
     "reputation": 0.5,
-    "active": true,
+    "active": false,
     "registered_at": "2026-04-03T15:12:36.728Z"
+  },
+  {
+    "id": "b0930a6088543e600b2cb33a289be3c4d2b8f63e14ed575a028f87e12718f614",
+    "endpoint": "https://blah-combined-forecast-collectors.trycloudflare.com",
+    "model": "qwen2.5-1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": false,
+    "registered_at": "2026-04-04T01:28:11.555Z"
+  },
+  {
+    "id": "e091f2bbee46ae0729fd0052fe624ab7beb8086f359496a7de5b2b5917ea7f74",
+    "endpoint": "https://money-high-dodge-opposite.trycloudflare.com",
+    "model": "qwen2.5:1.5b",
+    "price": 1000,
+    "reputation": 0.5,
+    "active": false,
+    "registered_at": "2026-04-04T01:52:35.934Z"
+  },
+  {
+    "id": "6dacaacae7eb115bedec72658ca29f219a3d32c810d4742eaa45d44725676dae",
+    "endpoint": "https://money-high-dodge-opposite.trycloudflare.com",
+    "model": "qwen2.5:1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": true,
+    "registered_at": "2026-04-04T01:58:30.955Z"
   }
 ]

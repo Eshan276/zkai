@@ -48,8 +48,9 @@ def register(
     pubkey = _get_enclave_pubkey()
     console.print(f"  pubkey: {pubkey[:16]}...{pubkey[-8:]}")
 
-    # Derive stable provider_id = sha256(pubkey)[:64]
-    provider_id = hashlib.sha256(pubkey.encode()).hexdigest()
+    # Generate a unique provider_id per registration = sha256(pubkey + timestamp)
+    # This avoids the contract bug where deregistered IDs can't be reused
+    provider_id = hashlib.sha256((pubkey + str(int(time.time()))).encode()).hexdigest()
     console.print(f"  provider_id: {provider_id}")
 
     # Endpoint

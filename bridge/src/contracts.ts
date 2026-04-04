@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { CompiledContract } from '@midnight-ntwrk/compact-js';
+import { encodeCoinPublicKey } from '@midnight-ntwrk/ledger-v8';
 import { compiledDir, createProviders, getWalletContext } from './wallet.js';
 
 // Load deployment addresses — Docker mounts deployment.json at /app/deployment.json
@@ -108,13 +109,16 @@ export async function deposit(amount: string): Promise<string> {
 }
 
 export async function deductBalance(
-  walletAddress: string,
+  coinPublicKey: string,
   providerId: string,
   jobId: string,
   amount: string,
 ): Promise<string> {
+  // coinPublicKey is a bech32 CoinPublicKey string from Lace — must use
+  // encodeCoinPublicKey to get the same bytes the deposit circuit stored
+  const walletKeyBytes = Buffer.from(encodeCoinPublicKey(coinPublicKey));
   return callCircuit('PaymentEscrow', 'deductBalance', [
-    toBytes32(walletAddress),
+    walletKeyBytes,
     toBytes32(providerId),
     toBytes32(jobId),
     BigInt(amount),

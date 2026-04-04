@@ -175,6 +175,7 @@ async def chat_completions(
 
     # X-Coin-Public-Key is the shielded key used as the escrow balance map key
     coin_public_key = request.headers.get("x-coin-public-key") or wallet_address or ""
+    print(f"[api] coin_public_key={coin_public_key[:16] if coin_public_key else 'MISSING'}... wallet={wallet_address}")
 
     # Build prompt from messages
     prompt = _messages_to_prompt(req.messages)
