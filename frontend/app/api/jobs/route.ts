@@ -21,7 +21,20 @@ export async function GET(req: Request) {
     ram_mb: r.ram_mb ?? null,
   });
 
+  const providerId = new URL(req.url).searchParams.get('provider_id');
+
   try {
+    if (providerId) {
+      const rows = await sql`
+        SELECT ${sql.unsafe(cols)}
+        FROM jobs
+        WHERE provider_id = ${providerId}
+        ORDER BY created_at DESC
+        LIMIT 200
+      `;
+      return NextResponse.json(rows.map(mapRow));
+    }
+
     if (!wallet) {
       const rows = await sql`
         SELECT ${sql.unsafe(cols)}, wallet_address
