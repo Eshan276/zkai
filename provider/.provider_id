@@ -1,1 +1,1 @@
-{"provider_id": "6dacaacae7eb115bedec72658ca29f219a3d32c810d4742eaa45d44725676dae", "pubkey": "3f7781276d9c1629e95df3f429191df865c30a47e7268a1612593a9106283308", "endpoint": "https://money-high-dodge-opposite.trycloudflare.com", "model": "qwen2.5:1.5b", "price": 100}
+{"provider_id": "ec30e0c8f642582212cf9e618380dd931f334ba97f53702a865fa1547a0942f2", "pubkey": "2fc63376643fb9fcbff70720e84631743123b2f3962eade0291957d6ca9a4630", "endpoint": "https://zkai-relay.fly.dev/relay/ec30e0c8f642582212cf9e618380dd931f334ba97f53702a865fa1547a0942f2", "model": "qwen2.5:1.5b", "price": 100}

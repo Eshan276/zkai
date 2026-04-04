@@ -43,5 +43,14 @@
     "reputation": 0.5,
     "active": true,
     "registered_at": "2026-04-04T01:58:30.955Z"
+  },
+  {
+    "id": "ec30e0c8f642582212cf9e618380dd931f334ba97f53702a865fa1547a0942f2",
+    "endpoint": "https://zkai-relay.fly.dev/relay/ec30e0c8f642582212cf9e618380dd931f334ba97f53702a865fa1547a0942f2",
+    "model": "qwen2.5:1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": true,
+    "registered_at": "2026-04-04T04:27:30.688Z"
   }
 ]
