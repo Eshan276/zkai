@@ -17,14 +17,13 @@ from rich.prompt import Prompt, Confirm
 from zkai_cli.util import (
     console, err_console,
     compose_dir, deploy_dir, find_repo_root,
-    require_docker, stream,
+    require_docker, stream, read_env_file,
 )
 
 _PROVIDER_ID_FILE = ".provider_id"
 _ENCLAVE_URL = "http://127.0.0.1:8080"
 _BRIDGE_URL = "http://127.0.0.1:7300"
 
-# Central auth/gateway server — set via zkai init or ZKAI_AUTH_URL env var
 import os as _os
 _AUTH_URL = _os.environ.get("ZKAI_AUTH_URL", "").rstrip("/")
 _RELAY_URL = _os.environ.get("ZKAI_RELAY_URL", "").rstrip("/")
@@ -41,6 +40,13 @@ def register(
     require_docker()
     repo = find_repo_root(repo_dir)
 
+    # Resolve relay URL: CLI env var > provider/.env > prompt
+    relay_url = _RELAY_URL
+    if not relay_url:
+        env = read_env_file(repo)
+        relay_url = env.get("ZKAI_RELAY_URL", "").rstrip("/")
+    auth_url = _AUTH_URL or read_env_file(repo).get("ZKAI_AUTH_URL", "").rstrip("/")
+
     # Check bridge is up and synced
     _wait_for_bridge()
 
@@ -56,8 +62,8 @@ def register(
 
     # Endpoint — auto-fill from relay if configured
     if not endpoint:
-        if _RELAY_URL:
-            endpoint = f"{_RELAY_URL}/relay/{provider_id}"
+        if relay_url:
+            endpoint = f"{relay_url}/relay/{provider_id}"
             console.print(f"  [dim]Using relay endpoint: {endpoint}[/dim]")
         else:
             endpoint = Prompt.ask(
@@ -93,10 +99,10 @@ def register(
     tx_id = result.get("tx_id", "submitted")
 
     # Register in central DB so Vercel gateway can discover this provider
-    if _AUTH_URL:
+    if auth_url:
         try:
             r = requests.post(
-                f"{_AUTH_URL}/api/providers/register",
+                f"{auth_url}/api/providers/register",
                 json={"provider_id": provider_id, "endpoint": endpoint, "model": model, "price": price},
                 timeout=15,
             )
@@ -154,10 +160,12 @@ def deregister(repo_dir: str | None):
         raise typer.Exit(1)
 
     # Remove from central DB
-    if _AUTH_URL:
+    env = read_env_file(repo)
+    auth_url = _AUTH_URL or env.get("ZKAI_AUTH_URL", "").rstrip("/")
+    if auth_url:
         try:
             requests.post(
-                f"{_AUTH_URL}/api/providers/deregister",
+                f"{auth_url}/api/providers/deregister",
                 json={"provider_id": provider_id},
                 timeout=10,
             )
