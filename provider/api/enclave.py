@@ -94,15 +94,36 @@ def _derive_key(shared_secret: bytes) -> bytes:
 
 # ── Inference ───────────────────────────────────────────────────────────────
 
-def run_inference(prompt: str) -> str:
+def run_inference(prompt: str) -> tuple[str, dict]:
     """
     Call Ollama API for inference.
-    Ollama runs inside the container alongside the enclave API.
+    Returns (response_text, metrics) where metrics contains token counts,
+    inference duration, and CPU/RAM usage sampled during the call.
     """
+    import time
+    import threading
     import requests as req
+    import psutil
+
     model = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
     max_tokens = int(os.environ.get("MAX_TOKENS", "512"))
 
+    # Sample CPU and RAM in a background thread while inference runs
+    cpu_samples: list[float] = []
+    ram_samples: list[float] = []
+    _stop = threading.Event()
+
+    def _sample():
+        proc = psutil.Process()
+        while not _stop.is_set():
+            cpu_samples.append(psutil.cpu_percent(interval=None))
+            ram_samples.append(proc.memory_info().rss / 1024 / 1024)  # MB
+            _stop.wait(0.5)
+
+    sampler = threading.Thread(target=_sample, daemon=True)
+    sampler.start()
+
+    t0 = time.time()
     resp = req.post(
         "http://localhost:11434/api/generate",
         json={
@@ -113,8 +134,22 @@ def run_inference(prompt: str) -> str:
         },
         timeout=120,
     )
+    elapsed_ms = int((time.time() - t0) * 1000)
+    _stop.set()
+    sampler.join(timeout=1)
+
     resp.raise_for_status()
-    return resp.json()["response"].strip()
+    data = resp.json()
+    text = data["response"].strip()
+
+    metrics = {
+        "prompt_tokens": data.get("prompt_eval_count", len(prompt.split())),
+        "completion_tokens": data.get("eval_count", len(text.split())),
+        "duration_ms": elapsed_ms,
+        "cpu_percent": round(sum(cpu_samples) / len(cpu_samples), 1) if cpu_samples else 0.0,
+        "ram_mb": round(sum(ram_samples) / len(ram_samples), 1) if ram_samples else 0.0,
+    }
+    return text, metrics
 
 
 # ── Attestation ─────────────────────────────────────────────────────────────

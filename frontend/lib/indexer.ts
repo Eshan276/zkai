@@ -15,6 +15,12 @@ export interface Job {
   amount: number;
   status: 0 | 1 | 2; // Pending | Completed | Refunded
   attestation_hash: string;
+  model?: string;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  duration_ms?: number | null;
+  cpu_percent?: number | null;
+  ram_mb?: number | null;
 }
 
 export async function fetchProviders(registryContract: string): Promise<Provider[]> {

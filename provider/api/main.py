@@ -142,7 +142,7 @@ def infer(
         raise HTTPException(status_code=400, detail=f"Decryption failed: {e}")
 
     try:
-        response_text = enclave.run_inference(prompt)
+        response_text, metrics = enclave.run_inference(prompt)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -181,7 +181,7 @@ async def chat_completions(
     prompt = _messages_to_prompt(req.messages)
 
     try:
-        response_text = enclave.run_inference(prompt)
+        response_text, metrics = enclave.run_inference(prompt)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -201,12 +201,15 @@ async def chat_completions(
             "finish_reason": "stop",
         }],
         "usage": {
-            "prompt_tokens": len(prompt.split()),
-            "completion_tokens": len(response_text.split()),
+            "prompt_tokens": metrics["prompt_tokens"],
+            "completion_tokens": metrics["completion_tokens"],
         },
         "x_zkai": {
             "job_id": job_id,
             "attestation_hash": attestation_hash,
+            "duration_ms": metrics["duration_ms"],
+            "cpu_percent": metrics["cpu_percent"],
+            "ram_mb": metrics["ram_mb"],
         },
     }
 

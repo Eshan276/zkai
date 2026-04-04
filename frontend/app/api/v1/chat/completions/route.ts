@@ -134,8 +134,12 @@ export async function POST(req: Request) {
   if (providerRes.ok) {
     const jobData = (() => { try { return JSON.parse(responseBody); } catch { return null; } })();
     const jobId = jobData?.x_zkai?.job_id ?? jobData?.id ?? crypto.randomUUID();
-    sql`INSERT INTO jobs (job_id, wallet_address, provider_id, amount, model)
-        VALUES (${jobId}, ${walletAddress}, ${provider.id}, ${provider.price}, ${model})
+    const xz = jobData?.x_zkai ?? {};
+    const usage = jobData?.usage ?? {};
+    sql`INSERT INTO jobs (job_id, wallet_address, provider_id, amount, model, prompt_tokens, completion_tokens, duration_ms, cpu_percent, ram_mb)
+        VALUES (${jobId}, ${walletAddress}, ${provider.id}, ${provider.price}, ${model},
+                ${usage.prompt_tokens ?? null}, ${usage.completion_tokens ?? null},
+                ${xz.duration_ms ?? null}, ${xz.cpu_percent ?? null}, ${xz.ram_mb ?? null})
         ON CONFLICT (job_id) DO NOTHING`.catch(() => {});
   }
 

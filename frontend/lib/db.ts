@@ -39,14 +39,25 @@ export async function initSchema() {
 
   await sql`
     CREATE TABLE IF NOT EXISTS jobs (
-      job_id         TEXT PRIMARY KEY,
-      wallet_address TEXT NOT NULL,
-      provider_id    TEXT NOT NULL DEFAULT '',
-      amount         INTEGER NOT NULL DEFAULT 0,
-      model          TEXT NOT NULL DEFAULT '',
-      created_at     TIMESTAMPTZ DEFAULT NOW()
+      job_id           TEXT PRIMARY KEY,
+      wallet_address   TEXT NOT NULL,
+      provider_id      TEXT NOT NULL DEFAULT '',
+      amount           INTEGER NOT NULL DEFAULT 0,
+      model            TEXT NOT NULL DEFAULT '',
+      prompt_tokens    INTEGER,
+      completion_tokens INTEGER,
+      duration_ms      INTEGER,
+      cpu_percent      REAL,
+      ram_mb           REAL,
+      created_at       TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER`;
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS completion_tokens INTEGER`;
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS duration_ms INTEGER`;
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cpu_percent REAL`;
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS ram_mb REAL`;
 
   await sql`
     CREATE INDEX IF NOT EXISTS idx_jobs_wallet ON jobs(wallet_address)

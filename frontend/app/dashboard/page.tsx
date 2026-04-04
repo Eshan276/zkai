@@ -434,6 +434,7 @@ function ActivityTab({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
 
                 {isOpen && (
                   <div className="px-5 pb-5 bg-white/[0.015] border-t border-white/5 space-y-4">
+                    {/* Core info */}
                     <div className="grid grid-cols-2 gap-4 pt-4">
                       <div>
                         <div className="text-xs text-white/30 mb-1.5">Job ID</div>
@@ -454,6 +455,45 @@ function ActivityTab({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
                         </span>
                       </div>
                     </div>
+
+                    {/* Tokens + performance */}
+                    {(job.prompt_tokens != null || job.duration_ms != null) && (
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white/[0.03] border border-white/5 rounded-xl p-4">
+                        {job.prompt_tokens != null && (
+                          <div className="text-center">
+                            <div className="text-lg font-semibold text-white/80 tabular-nums">{job.prompt_tokens}</div>
+                            <div className="text-xs text-white/30 mt-0.5">Input tokens</div>
+                          </div>
+                        )}
+                        {job.completion_tokens != null && (
+                          <div className="text-center">
+                            <div className="text-lg font-semibold text-white/80 tabular-nums">{job.completion_tokens}</div>
+                            <div className="text-xs text-white/30 mt-0.5">Output tokens</div>
+                          </div>
+                        )}
+                        {job.duration_ms != null && (
+                          <div className="text-center">
+                            <div className="text-lg font-semibold text-white/80 tabular-nums">
+                              {job.duration_ms >= 1000 ? `${(job.duration_ms / 1000).toFixed(1)}s` : `${job.duration_ms}ms`}
+                            </div>
+                            <div className="text-xs text-white/30 mt-0.5">Duration</div>
+                          </div>
+                        )}
+                        {job.cpu_percent != null && (
+                          <div className="text-center">
+                            <div className="text-lg font-semibold text-white/80 tabular-nums">{job.cpu_percent}%</div>
+                            <div className="text-xs text-white/30 mt-0.5">Avg CPU</div>
+                          </div>
+                        )}
+                        {job.ram_mb != null && (
+                          <div className="text-center">
+                            <div className="text-lg font-semibold text-white/80 tabular-nums">{job.ram_mb >= 1024 ? `${(job.ram_mb / 1024).toFixed(1)}GB` : `${job.ram_mb}MB`}</div>
+                            <div className="text-xs text-white/30 mt-0.5">Avg RAM</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {hasAttestation && (
                       <div>
                         <div className="text-xs text-white/30 mb-1.5">Attestation Hash</div>
