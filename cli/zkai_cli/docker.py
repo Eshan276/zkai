@@ -128,6 +128,9 @@ def status(repo_dir: str | None):
     # Enclave health
     _print_enclave_health()
 
+    # Dashboard link
+    _print_dashboard_link(repo)
+
 
 def _print_bridge_health():
     try:
@@ -151,6 +154,21 @@ def _print_enclave_health():
         console.print(f"[green]Enclave:[/green] ok  |  mode: {mode}")
     except Exception:
         console.print("[dim]Enclave:[/dim] not reachable on port 8080 (container may still be starting)")
+
+
+def _print_dashboard_link(repo: Path):
+    import json as _json
+    pid_file = compose_dir(repo) / ".provider_id"
+    if not pid_file.exists():
+        return
+    try:
+        data = _json.loads(pid_file.read_text())
+        provider_id = data.get("provider_id", "")
+        if provider_id:
+            url = f"https://zkai.vercel.app/provider_dashboard?id={provider_id}"
+            console.print(f"\n[bold]Provider Dashboard:[/bold] [link={url}][violet]{url}[/violet][/link]")
+    except Exception:
+        pass
 
 
 def _parse_ps(raw: str) -> list[dict]:
