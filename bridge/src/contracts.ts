@@ -12,22 +12,33 @@ import { CompiledContract } from '@midnight-ntwrk/compact-js';
 import { encodeCoinPublicKey } from '@midnight-ntwrk/ledger-v8';
 import { compiledDir, createProviders, getWalletContext, getProviderUnshieldedAddress } from './wallet.js';
 
-// Load deployment addresses — Docker mounts deployment.json at /app/deployment.json
-const deploymentPath = fs.existsSync('/app/deployment.json')
-  ? '/app/deployment.json'
-  : path.resolve(compiledDir, '..', 'deployment.json');
-if (!fs.existsSync(deploymentPath)) {
-  throw new Error(`deployment.json not found at ${deploymentPath}. Run deploy first.`);
+// Load deployment addresses — prefer env vars (Docker), fall back to deployment.json
+function loadAddresses() {
+  if (process.env.REGISTRY_CONTRACT) {
+    console.log('[contracts] loaded addresses from environment variables');
+    return {
+      ProviderRegistry: process.env.REGISTRY_CONTRACT,
+      PaymentEscrow: process.env.ESCROW_CONTRACT ?? '',
+      AttestationRegistry: process.env.ATTESTATION_CONTRACT ?? '',
+    };
+  }
+  const deploymentPath = fs.existsSync('/app/deployment.json')
+    ? '/app/deployment.json'
+    : path.resolve(compiledDir, '..', 'deployment.json');
+  if (!fs.existsSync(deploymentPath)) {
+    throw new Error(`deployment.json not found and no REGISTRY_CONTRACT env var set. Run deploy first.`);
+  }
+  const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf-8'));
+  console.log('[contracts] loaded deployment from:', deploymentPath);
+  return {
+    ProviderRegistry: deployment.contracts.ProviderRegistry as string,
+    PaymentEscrow: deployment.contracts.PaymentEscrow as string,
+    AttestationRegistry: deployment.contracts.AttestationRegistry as string,
+  };
 }
-const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf-8'));
-console.log('[contracts] loaded deployment from:', deploymentPath);
-console.log('[contracts] ProviderRegistry:', deployment.contracts?.ProviderRegistry);
 
-export const ADDRESSES = {
-  ProviderRegistry: deployment.contracts.ProviderRegistry as string,
-  PaymentEscrow: deployment.contracts.PaymentEscrow as string,
-  AttestationRegistry: deployment.contracts.AttestationRegistry as string,
-};
+export const ADDRESSES = loadAddresses();
+console.log('[contracts] ProviderRegistry:', ADDRESSES.ProviderRegistry);
 
 async function loadCompiledContract(name: string) {
   const contractPath = path.join(compiledDir, name, 'contract', 'index.js');
