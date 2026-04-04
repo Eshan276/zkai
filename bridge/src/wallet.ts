@@ -134,7 +134,7 @@ export async function startWallet(): Promise<WalletContext> {
         }
       }),
       Rx.filter((s: any) => s.isSynced),
-      Rx.timeout(300000),
+      Rx.timeout(600000),
     )
   ).catch((e: any) => {
     console.error('[wallet:sync] timed out or failed:', e?.message ?? e);
