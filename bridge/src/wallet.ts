@@ -93,6 +93,12 @@ export function isWalletReady(): boolean {
   return _walletCtx !== null;
 }
 
+export function getProviderUnshieldedAddress(): string {
+  if (!_walletCtx) throw new Error('Wallet not initialized.');
+  // Returns the 64-char hex of the unshielded (NightExternal) public key (SignatureVerifyingKey is a hex string)
+  return _walletCtx.unshieldedKeystore.getPublicKey() as string;
+}
+
 export async function getWalletContext(): Promise<WalletContext> {
   if (_walletCtx) return _walletCtx;
   throw new Error('Wallet not initialized. Call startWallet() first.');

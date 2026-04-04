@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { CompiledContract } from '@midnight-ntwrk/compact-js';
 import { encodeCoinPublicKey } from '@midnight-ntwrk/ledger-v8';
-import { compiledDir, createProviders, getWalletContext } from './wallet.js';
+import { compiledDir, createProviders, getWalletContext, getProviderUnshieldedAddress } from './wallet.js';
 
 // Load deployment addresses — Docker mounts deployment.json at /app/deployment.json
 const deploymentPath = fs.existsSync('/app/deployment.json')
@@ -117,11 +117,14 @@ export async function deductBalance(
   // coinPublicKey is a bech32 CoinPublicKey string from Lace — must use
   // encodeCoinPublicKey to get the same bytes the deposit circuit stored
   const walletKeyBytes = Buffer.from(encodeCoinPublicKey(coinPublicKey));
+  // provider_address: bridge's unshielded public key — receives tNIGHT payment
+  const providerAddrBytes = Buffer.from(getProviderUnshieldedAddress(), 'hex');
   return callCircuit('PaymentEscrow', 'deductBalance', [
     walletKeyBytes,
     toBytes32(providerId),
     toBytes32(jobId),
     BigInt(amount),
+    providerAddrBytes,
   ]);
 }
 

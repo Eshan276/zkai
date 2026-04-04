@@ -2,11 +2,12 @@ pragma language_version 0.22;
 
 import CompactStandardLibrary;
 
-// ZKai Payment Escrow — prepaid balance model
-// Consumer deposits DUST once. Provider deducts per inference.
+// ZKai Payment Escrow — prepaid balance model with real tNIGHT transfers
+// Consumer deposits real tNIGHT via receiveUnshielded.
+// Provider receives real tNIGHT per inference via sendUnshielded.
 // Consumer can withdraw remaining balance anytime.
 
-// balance[wallet_pubkey] = DUST deposited minus spent
+// balance[coin_public_key_bytes] = tNIGHT deposited minus spent
 export ledger balance: Map<Bytes<32>, Uint<64>>;
 
 // total spent per wallet (for dashboard display)
@@ -20,6 +21,8 @@ export ledger job_provider: Map<Bytes<32>, Bytes<32>>;
 export circuit deposit(amount: Uint<64>): [] {
   const pk = ownPublicKey().bytes;
   const pub_amount = disclose(amount);
+  const tnight: Bytes<32> = pad(32, "");
+  receiveUnshielded(tnight, pub_amount as Uint<128>);
   if (balance.member(pk)) {
     balance.insert(pk, (balance.lookup(pk) + pub_amount) as Uint<64>);
   } else {
@@ -28,14 +31,16 @@ export circuit deposit(amount: Uint<64>): [] {
 }
 
 export circuit deductBalance(
-  wallet_pk:   Bytes<32>,
-  provider_id: Bytes<32>,
-  job_id:      Bytes<32>,
-  amount:      Uint<64>
+  wallet_pk:        Bytes<32>,
+  provider_id:      Bytes<32>,
+  job_id:           Bytes<32>,
+  amount:           Uint<64>,
+  provider_address: Bytes<32>
 ): [] {
-  const pub_wallet = disclose(wallet_pk);
-  const pub_amount = disclose(amount);
-  const pub_job_id = disclose(job_id);
+  const pub_wallet   = disclose(wallet_pk);
+  const pub_amount   = disclose(amount);
+  const pub_job_id   = disclose(job_id);
+  const pub_provider = disclose(provider_address);
 
   assert(balance.member(pub_wallet), "Wallet has no balance");
   const current = balance.lookup(pub_wallet);
@@ -52,6 +57,10 @@ export circuit deductBalance(
   job_amount.insert(pub_job_id, pub_amount);
   job_wallet.insert(pub_job_id, pub_wallet);
   job_provider.insert(pub_job_id, disclose(provider_id));
+
+  const tnight: Bytes<32> = pad(32, "");
+  const recipient = UserAddress { bytes: pub_provider };
+  sendUnshielded(tnight, pub_amount as Uint<128>, right<ContractAddress, UserAddress>(recipient));
 }
 
 export circuit withdraw(amount: Uint<64>): [] {
@@ -61,4 +70,7 @@ export circuit withdraw(amount: Uint<64>): [] {
   const pub_amount = disclose(amount);
   assert(current >= pub_amount, "Insufficient balance");
   balance.insert(pk, current - pub_amount);
+  const tnight: Bytes<32> = pad(32, "");
+  const self = UserAddress { bytes: pk };
+  sendUnshielded(tnight, pub_amount as Uint<128>, right<ContractAddress, UserAddress>(self));
 }

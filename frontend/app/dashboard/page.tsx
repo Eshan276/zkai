@@ -85,6 +85,9 @@ function WalletButton({ onWalletChange, onApiChange }: { onWalletChange: (addr: 
   if (walletState) {
     const short = `${walletState.address.slice(0, 16)}…${walletState.address.slice(-6)}`;
     const dust = walletState.dustBalance ?? BigInt(0);
+    // tNIGHT native token type = 32 zero bytes
+    const TNIGHT_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
+    const tnight = walletState.unshieldedBalances?.[TNIGHT_KEY] ?? BigInt(0);
     return (
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
@@ -94,7 +97,9 @@ function WalletButton({ onWalletChange, onApiChange }: { onWalletChange: (addr: 
             {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
           <span className="text-white/20">·</span>
-          <span className="text-sm text-white/50">{dust.toString()} DUST</span>
+          <span className="text-sm text-white/50">{tnight.toString()} tNIGHT</span>
+          <span className="text-white/20">·</span>
+          <span className="text-sm text-white/40">{dust.toString()} DUST</span>
         </div>
         <button
           onClick={disconnect}
@@ -261,14 +266,14 @@ function EscrowCard({ walletAddress, connectedAPI }: { walletAddress: string | n
         <h2 className="text-sm font-semibold text-white">Escrow Balance</h2>
         {escrowBalance !== null && (
           <span className="ml-2 text-sm font-bold text-purple-300">
-            {balanceLoading ? '…' : `${escrowBalance} DUST`}
+            {balanceLoading ? '…' : `${escrowBalance} tNIGHT`}
           </span>
         )}
-        <span className="text-xs text-white/30 ml-auto">Lock DUST for inference payments</span>
+        <span className="text-xs text-white/30 ml-auto">Lock tNIGHT for inference payments</span>
       </div>
       <p className="text-xs text-white/40">
-        Deposit DUST once — every inference auto-deducts from your escrow balance.
-        100 DUST per request.
+        Deposit tNIGHT once — every inference auto-deducts from your escrow balance.
+        100 tNIGHT per request.
       </p>
       {!walletAddress ? (
         <p className="text-xs text-yellow-400/70">Connect your wallet to deposit.</p>
@@ -277,7 +282,7 @@ function EscrowCard({ walletAddress, connectedAPI }: { walletAddress: string | n
           <input
             type="number"
             min="1"
-            placeholder="Amount (DUST)"
+            placeholder="Amount (tNIGHT)"
             value={amount}
             onChange={e => setAmount(e.target.value)}
             className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-purple-500/50"
@@ -311,7 +316,7 @@ function OverviewTab({ jobs, providers, loading, walletAddress, connectedAPI }: 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard label="Total Requests" value={loading ? '—' : jobs.length} icon={Activity} trend="up" />
         <StatCard label="Completed" value={loading ? '—' : completed.length} sub={`${successRate}% success rate`} icon={CheckCircle} />
-        <StatCard label="Total Spent" value={loading ? '—' : `${totalDust} DUST`} icon={Zap} />
+        <StatCard label="Total Spent" value={loading ? '—' : `${totalDust} tNIGHT`} icon={Zap} />
         <StatCard label="Active Providers" value={loading ? '—' : providers.length} icon={Cpu} trend="up" />
       </div>
 
@@ -350,7 +355,7 @@ function OverviewTab({ jobs, providers, loading, walletAddress, connectedAPI }: 
                     <span className={`text-xs border px-2.5 py-0.5 rounded-full ${JOB_STATUS_COLOR[job.status]}`}>
                       {JOB_STATUS[job.status]}
                     </span>
-                    <span className="text-sm text-white/40">{job.amount} DUST</span>
+                    <span className="text-sm text-white/40">{job.amount} tNIGHT</span>
                   </div>
                 </div>
               );
@@ -427,7 +432,7 @@ function ActivityTab({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
                     <span className={`text-xs border px-2.5 py-0.5 rounded-full ${JOB_STATUS_COLOR[job.status]}`}>
                       {JOB_STATUS[job.status]}
                     </span>
-                    <span className="text-sm text-white/40 tabular-nums">{job.amount} DUST</span>
+                    <span className="text-sm text-white/40 tabular-nums">{job.amount} tNIGHT</span>
                     <ChevronRight className={`w-4 h-4 text-white/20 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                   </div>
                 </button>
@@ -446,7 +451,7 @@ function ActivityTab({ jobs, loading }: { jobs: Job[]; loading: boolean }) {
                       </div>
                       <div>
                         <div className="text-xs text-white/30 mb-1.5">Amount</div>
-                        <div className="text-sm text-white/70">{job.amount} DUST</div>
+                        <div className="text-sm text-white/70">{job.amount} tNIGHT</div>
                       </div>
                       <div>
                         <div className="text-xs text-white/30 mb-1.5">Status</div>
@@ -551,7 +556,7 @@ function ModelsTab({ providers, loading }: { providers: Provider[]; loading: boo
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
                   <div className="text-xs text-white/30 mb-1">Price</div>
-                  <div className="font-semibold">{p.price} <span className="text-white/40 font-normal text-xs">DUST/req</span></div>
+                  <div className="font-semibold">{p.price} <span className="text-white/40 font-normal text-xs">tNIGHT/req</span></div>
                 </div>
                 <div>
                   <div className="text-xs text-white/30 mb-1">Reputation</div>

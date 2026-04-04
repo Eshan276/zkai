@@ -9,7 +9,8 @@ export type ImpureCircuits<PS> = {
                 wallet_pk_0: Uint8Array,
                 provider_id_0: Uint8Array,
                 job_id_0: Uint8Array,
-                amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+                amount_0: bigint,
+                provider_address_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   withdraw(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
@@ -19,7 +20,8 @@ export type ProvableCircuits<PS> = {
                 wallet_pk_0: Uint8Array,
                 provider_id_0: Uint8Array,
                 job_id_0: Uint8Array,
-                amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+                amount_0: bigint,
+                provider_address_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   withdraw(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
@@ -32,7 +34,8 @@ export type Circuits<PS> = {
                 wallet_pk_0: Uint8Array,
                 provider_id_0: Uint8Array,
                 job_id_0: Uint8Array,
-                amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+                amount_0: bigint,
+                provider_address_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   withdraw(context: __compactRuntime.CircuitContext<PS>, amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
