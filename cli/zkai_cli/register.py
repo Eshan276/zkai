@@ -74,7 +74,7 @@ def register(
     console.print(f"\n[bold]Registering on Midnight chain...[/bold]")
     console.print(f"  endpoint: {endpoint}")
     console.print(f"  model:    {model}")
-    console.print(f"  price:    {price} DUST/req")
+    console.print(f"  price:    {price} tNIGHT/req")
 
     # Call bridge register endpoint
     pubkey_padded = pubkey.zfill(64)  # ensure 32 bytes (64 hex chars)
@@ -192,7 +192,7 @@ def info(repo_dir: str | None):
     console.print(f"  [bold]Pubkey:[/bold]      {data.get('pubkey', '?')}")
     console.print(f"  [bold]Endpoint:[/bold]    {data.get('endpoint', '?')}")
     console.print(f"  [bold]Model:[/bold]       {data.get('model', '?')}")
-    console.print(f"  [bold]Price:[/bold]       {data.get('price', '?')} DUST/req")
+    console.print(f"  [bold]Price:[/bold]       {data.get('price', '?')} tNIGHT/req")
     console.print()
 
     # Live pubkey check
