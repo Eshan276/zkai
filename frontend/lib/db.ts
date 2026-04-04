@@ -44,6 +44,7 @@ export async function initSchema() {
       provider_id      TEXT NOT NULL DEFAULT '',
       amount           INTEGER NOT NULL DEFAULT 0,
       model            TEXT NOT NULL DEFAULT '',
+      attestation_hash  TEXT,
       prompt_tokens    INTEGER,
       completion_tokens INTEGER,
       duration_ms      INTEGER,
@@ -53,6 +54,7 @@ export async function initSchema() {
     )
   `;
 
+  await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS attestation_hash TEXT`;
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER`;
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS completion_tokens INTEGER`;
   await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS duration_ms INTEGER`;

@@ -4,7 +4,7 @@ import { sql } from '@/lib/db';
 export async function GET(req: Request) {
   const wallet = new URL(req.url).searchParams.get('wallet');
 
-  const cols = `job_id, provider_id, amount, model, created_at,
+  const cols = `job_id, provider_id, amount, model, created_at, attestation_hash,
     prompt_tokens, completion_tokens, duration_ms, cpu_percent, ram_mb`;
 
   const mapRow = (r: any) => ({
@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     amount: r.amount,
     model: r.model,
     status: 1,
-    attestation_hash: '',
+    attestation_hash: r.attestation_hash ?? '',
     prompt_tokens: r.prompt_tokens ?? null,
     completion_tokens: r.completion_tokens ?? null,
     duration_ms: r.duration_ms ?? null,
