@@ -58,10 +58,9 @@ def start(
     repo_dir: str = typer.Option(None, "--dir", "-d", help="zkai repo root"),
     build: bool = typer.Option(False, "--build", help="Rebuild enclave image before starting"),
     follow: bool = typer.Option(False, "--logs", "-l", help="Tail logs after starting"),
-    tunnel: bool = typer.Option(False, "--tunnel", help="Also start Cloudflare Tunnel (public HTTPS endpoint)"),
 ):
     """Start enclave + bridge containers."""
-    _docker.start(repo_dir, build=build, follow=follow, tunnel=tunnel)
+    _docker.start(repo_dir, build=build, follow=follow)
 
 
 @app.command()
@@ -127,12 +126,6 @@ def info(
 ):
     """Print provider ID, TEE pubkey, and endpoint."""
     _register.info(repo_dir)
-
-
-@app.command(name="tunnel-url")
-def tunnel_url():
-    """Print the active Cloudflare Tunnel URL (if tunnel is running)."""
-    _docker.print_tunnel_url()
 
 
 # ── API key management ────────────────────────────────────────────────────────

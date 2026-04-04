@@ -27,6 +27,7 @@ _BRIDGE_URL = "http://127.0.0.1:7300"
 # Central auth/gateway server — set via zkai init or ZKAI_AUTH_URL env var
 import os as _os
 _AUTH_URL = _os.environ.get("ZKAI_AUTH_URL", "").rstrip("/")
+_RELAY_URL = _os.environ.get("ZKAI_RELAY_URL", "").rstrip("/")
 
 
 # ── register ──────────────────────────────────────────────────────────────────
@@ -53,12 +54,16 @@ def register(
     provider_id = hashlib.sha256((pubkey + str(int(time.time()))).encode()).hexdigest()
     console.print(f"  provider_id: {provider_id}")
 
-    # Endpoint
+    # Endpoint — auto-fill from relay if configured
     if not endpoint:
-        endpoint = Prompt.ask(
-            "\nPublic endpoint URL (consumers will connect here)",
-            default="http://localhost:8080",
-        )
+        if _RELAY_URL:
+            endpoint = f"{_RELAY_URL}/relay/{provider_id}"
+            console.print(f"  [dim]Using relay endpoint: {endpoint}[/dim]")
+        else:
+            endpoint = Prompt.ask(
+                "\nPublic endpoint URL (consumers will connect here)",
+                default="http://localhost:8080",
+            )
 
     console.print(f"\n[bold]Registering on Midnight chain...[/bold]")
     console.print(f"  endpoint: {endpoint}")

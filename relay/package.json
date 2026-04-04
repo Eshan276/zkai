@@ -1,0 +1,16 @@
+{
+  "name": "zkai-relay",
+  "version": "1.0.0",
+  "description": "ZKai WebSocket relay — bridges Vercel gateway to provider enclaves",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "uuid": "^11.0.0",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -18,5 +18,22 @@ echo "[start] Pulling model: $MODEL"
 ollama pull $MODEL
 echo "[start] Model ready."
 
-# Start FastAPI enclave API
-python3 api/main.py
+# Start FastAPI enclave API in background, then launch relay client
+python3 api/main.py &
+FASTAPI_PID=$!
+
+# Wait for enclave to be healthy before connecting to relay
+echo "[start] Waiting for enclave API..."
+until curl -sf http://localhost:8080/health > /dev/null; do
+    sleep 2
+done
+echo "[start] Enclave ready."
+
+# Connect to relay (outbound WS — no public URL needed)
+if [ -n "$ZKAI_RELAY_URL" ]; then
+    echo "[start] Connecting to relay at $ZKAI_RELAY_URL..."
+    python3 /app/api/ws_relay_client.py &
+fi
+
+# Keep container alive by waiting on FastAPI
+wait $FASTAPI_PID

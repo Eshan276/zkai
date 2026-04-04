@@ -62,36 +62,15 @@ services:
       - ZKAI_BRIDGE_URL=http://bridge:7300
       - ZKAI_AUTH_URL=${ZKAI_AUTH_URL:-https://zkai.vercel.app}
       - ZKAI_PRICE_PER_REQUEST=${ZKAI_PRICE_PER_REQUEST:-100}
+      - ZKAI_RELAY_URL=${ZKAI_RELAY_URL:-}
+      - ZKAI_RELAY_SECRET=${ZKAI_RELAY_SECRET:-}
     depends_on:
       bridge:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── Optional: Cloudflare Tunnel ──────────────────────────────────────────
-  # Gives a public HTTPS endpoint (*.trycloudflare.com) without opening
-  # firewall ports or needing a static IP.
-  #
-  # Enable:  zkai start --tunnel
-  #      or: docker compose --profile tunnel up -d
-  #
-  # After starting, run:  zkai tunnel-url
-  #                   or: docker logs zkai-tunnel 2>&1 | grep trycloudflare
-  # Copy the https://xxxxx.trycloudflare.com URL and use it as your endpoint:
-  #   zkai register --endpoint https://xxxxx.trycloudflare.com
-  #
-  # Note: trycloudflare.com URLs are temporary and change on each restart.
-  # For a permanent URL, set CLOUDFLARE_TUNNEL_TOKEN (from Cloudflare dashboard).
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: zkai-tunnel
-    profiles: ["tunnel"]
-    # Quick tunnel (no account): temporary https://*.trycloudflare.com URL
-    # Named tunnel (permanent): set CLOUDFLARE_TUNNEL_TOKEN in provider/.env
-    #   and change command to: tunnel --no-autoupdate run --token $CLOUDFLARE_TUNNEL_TOKEN
-    command: tunnel --no-autoupdate --url http://enclave:8080
-    depends_on:
-      - enclave
-    restart: unless-stopped
+  # Cloudflare tunnel removed — providers now connect to the Fly.io relay
+  # instead of needing a public URL. Set ZKAI_RELAY_URL in .env.
 
 volumes:
   ollama_models:

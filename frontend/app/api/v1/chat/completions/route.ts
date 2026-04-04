@@ -94,7 +94,12 @@ export async function POST(req: Request) {
   // The enclave expects: POST /infer with encrypted payload from the SDK.
   // For gateway mode we forward the raw OpenAI-style body to /v1/chat/completions
   // on the enclave (provider runs an OpenAI-compatible endpoint internally).
-  const targetUrl = `${provider.endpoint.replace(/\/$/, '')}/v1/chat/completions`;
+  // Relay endpoints already include the full path (/relay/:id)
+  // Direct endpoints are bare host URLs (http://1.2.3.4:8080)
+  const isRelay = provider.endpoint.includes('/relay/');
+  const targetUrl = isRelay
+    ? provider.endpoint
+    : `${provider.endpoint.replace(/\/$/, '')}/v1/chat/completions`;
 
   let providerRes: Response;
   try {
@@ -108,7 +113,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify(body),
       // @ts-ignore — Node 18+ supports this
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(115_000),
     });
   } catch (e: any) {
     console.error(`[gateway] upstream ${provider.endpoint} failed:`, e.message);
