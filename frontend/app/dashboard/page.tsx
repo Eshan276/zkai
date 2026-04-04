@@ -530,7 +530,7 @@ function ModelsTab({ providers, loading }: { providers: Provider[]; loading: boo
               {/* Quick-use snippet */}
               <div className="mt-4 bg-black/40 border border-white/5 rounded-xl p-3">
                 <div className="text-xs text-white/20 mb-2">Quick start</div>
-                <pre className="text-xs text-white/50 overflow-x-auto"><code>{`ZKai(api_key="…", provider_endpoint="${p.endpoint}")`}</code></pre>
+                <pre className="text-xs text-white/50 overflow-x-auto"><code>{`ZKai(api_key="…", base_url="https://zkai.vercel.app")`}</code></pre>
               </div>
             </div>
           ))}
@@ -708,11 +708,11 @@ function KeysTab({ walletAddress, connectedAPI }: { walletAddress: string | null
 
 client = ZKai(
     api_key="${activeKeys[0]?.key ?? '<your-key>'}",
-    provider_endpoint="https://provider.example.com",
+    base_url="https://zkai.vercel.app",
 )
 
 resp = client.chat.completions.create(
-    model="qwen2.5-1.5b",
+    model="qwen2.5:1.5b",
     messages=[{"role": "user", "content": "Hello!"}],
 )
 print(resp.choices[0].message.content)`}</code></pre>

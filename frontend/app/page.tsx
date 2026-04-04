@@ -74,11 +74,11 @@ export default async function LandingPage() {
 
 client = ZKai(
     api_key="your-key",
-    provider_endpoint="https://provider.example.com",
+    base_url="https://zkai.vercel.app",
 )
 
 resp = client.chat.completions.create(
-    model="qwen2.5-1.5b",
+    model="qwen2.5:1.5b",
     messages=[{"role": "user", "content": "Hello!"}],
 )
 print(resp.choices[0].message.content)
