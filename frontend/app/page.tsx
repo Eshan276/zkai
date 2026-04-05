@@ -1,4 +1,4 @@
-import Spline from '@splinetool/react-spline/next';
+import SplineHero from '@/components/spline-hero';
 
 import SkewCards from '@/components/ui/gradient-card-showcase';
 import FaqAccordion from '@/components/ui/faq-accordion';
@@ -10,14 +10,16 @@ import IntegrationsSection from '@/components/integrations-section';
 import SecuritySection from '@/components/security-section';
 import { CtaSection } from '@/components/cta-section';
 import { FooterSection } from '@/components/footer-section';
+import { Navigation } from '@/components/navigation';
 
 export default function Home() {
   return (
     <main className="relative w-full bg-black">
       <ScrollProgress />
+      <Navigation />
       {/* ── Hero (Spline) ─────────────────────────────────────────── */}
       <div className="spline-container relative h-screen w-full overflow-hidden bg-black">
-        <Spline scene="https://prod.spline.design/B8J1g8wI37Zc4ij3/scene.splinecode" />
+        <SplineHero />
 
         {/* Bottom-only seam blend so hero text/content remains unaffected. */}
         <div
