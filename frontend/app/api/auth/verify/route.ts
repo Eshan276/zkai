@@ -9,10 +9,11 @@
 // When Midnight exposes signData properly we'll add full sig verification.
 
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getSql } from '@/lib/db';
 import { randomBytes } from 'crypto';
 
 export async function POST(req: Request) {
+  const sql = getSql();
   const { wallet_address, nonce, coin_public_key } = await req.json();
 
   if (!wallet_address || !nonce) {

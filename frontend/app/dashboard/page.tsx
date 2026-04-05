@@ -141,6 +141,41 @@
 //   );
 // }
 
+import Link from "next/link";
+
+export const metadata = {
+  title: "Dashboard - ZKai",
+  description: "Consumer dashboard for ZKai.",
+};
+
+export default function DashboardPage() {
+  return (
+    <main className="min-h-screen bg-black text-white">
+      <section className="mx-auto flex max-w-3xl flex-col items-center px-6 py-24 text-center">
+        <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="mt-3 text-sm text-white/60">
+          This route currently has a temporary placeholder while the full
+          consumer dashboard UI is being restored.
+        </p>
+        <div className="mt-8 flex gap-3">
+          <Link
+            href="/model"
+            className="rounded-lg border border-white/20 px-4 py-2 text-sm text-white hover:border-white/40"
+          >
+            Browse Models
+          </Link>
+          <Link
+            href="/"
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90"
+          >
+            Back Home
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 // // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 // function Sidebar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {

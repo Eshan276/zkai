@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getSql } from '@/lib/db';
 
 export async function POST(req: Request) {
+  const sql = getSql();
   const body = await req.json().catch(() => null);
   const { provider_id } = body ?? {};
 

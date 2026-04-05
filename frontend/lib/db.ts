@@ -1,12 +1,27 @@
-import { neon } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-// Set DATABASE_URL in .env.local (Neon connection string)
-const sql = neon(process.env.DATABASE_URL!);
+type SqlClient = NeonQueryFunction<false, false>;
 
-export { sql };
+let sqlClient: SqlClient | null = null;
+
+export function getSql(): SqlClient {
+  if (sqlClient) return sqlClient;
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error(
+      'DATABASE_URL is not set. Add it to your environment before calling DB-backed APIs.',
+    );
+  }
+
+  sqlClient = neon<false, false>(databaseUrl);
+  return sqlClient;
+}
 
 // Run once to initialize schema
 export async function initSchema() {
+  const sql = getSql();
+
   await sql`
     CREATE TABLE IF NOT EXISTS users (
       wallet_address TEXT PRIMARY KEY,

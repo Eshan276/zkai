@@ -2,9 +2,10 @@
 // Returns all API keys for a wallet address (for dashboard display)
 
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getSql } from '@/lib/db';
 
 export async function GET(req: Request) {
+  const sql = getSql();
   const wallet = new URL(req.url).searchParams.get('wallet');
   if (!wallet) {
     return NextResponse.json({ error: 'wallet required' }, { status: 400 });
@@ -22,6 +23,7 @@ export async function GET(req: Request) {
 
 // DELETE /api/auth/me — revoke a key
 export async function DELETE(req: Request) {
+  const sql = getSql();
   const { key, wallet_address } = await req.json();
   if (!key || !wallet_address) {
     return NextResponse.json({ error: 'key and wallet_address required' }, { status: 400 });

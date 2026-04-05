@@ -5,10 +5,11 @@
 // Client signs `message` with their Midnight wallet, then POSTs to /api/auth/verify
 
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getSql } from '@/lib/db';
 import { randomBytes } from 'crypto';
 
 export async function POST(req: Request) {
+  const sql = getSql();
   const { wallet_address } = await req.json();
   if (!wallet_address || typeof wallet_address !== 'string') {
     return NextResponse.json({ error: 'wallet_address required' }, { status: 400 });

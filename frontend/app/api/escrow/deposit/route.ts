@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getSql } from '@/lib/db';
 
 const BRIDGE_URL = (process.env.ZKAI_BRIDGE_URL ?? 'http://localhost:7300').replace(/\/$/, '');
 
 export async function POST(req: Request) {
+  const sql = getSql();
   // Verify API key
   const apiKey = req.headers.get('x-api-key') ?? req.headers.get('authorization')?.replace(/^Bearer /, '');
   let walletAddress: string | null = null;
