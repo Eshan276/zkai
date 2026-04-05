@@ -7,12 +7,12 @@ import { Button } from "@/components/ui/button";
 
 const navLinks = [
   { name: "Dashboard", href: "/dashboard" },
-  { name: "Models", href: "#integrations" },
+  { name: "Models", href: "/model" },
   { name: "Ranking", href: "/provider_dashboard" },
   { name: "Docs", href: "https://github.com/Eshan276/zkai" },
 ] as const;
 
-export function Navigation() {
+export function Navigation({ forceTransparent = false }: { forceTransparent?: boolean }) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -32,6 +32,8 @@ export function Navigation() {
     };
   }, [isMobileMenuOpen]);
 
+  const useGlassNav = !forceTransparent && (isScrolled || isMobileMenuOpen);
+
   return (
     <header
       className={`fixed left-0 right-0 z-50 transition-all duration-500 ${
@@ -40,7 +42,7 @@ export function Navigation() {
     >
       <nav
         className={`mx-auto transition-all duration-500 ${
-          isScrolled || isMobileMenuOpen
+          useGlassNav
             ? "max-w-[1200px] rounded-2xl border border-white/10 bg-black/70 shadow-lg backdrop-blur-xl"
             : "max-w-[1400px] bg-transparent"
         }`}
