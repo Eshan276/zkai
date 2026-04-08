@@ -4,7 +4,13 @@ import { ArrowUpRight } from "lucide-react";
 
 import { AnimatedWave } from "./animated-wave";
 
-const footerLinks = {
+type FooterLink = {
+  name: string;
+  href: string;
+  badge?: string;
+};
+
+const footerLinks: Record<string, readonly FooterLink[]> = {
   Product: [
     { name: "Features", href: "#features" },
     { name: "How it works", href: "#how-it-works" },

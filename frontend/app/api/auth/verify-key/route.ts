@@ -5,9 +5,10 @@
 // Enclaves should cache the result for 60s to avoid hammering this endpoint.
 
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getSql } from '@/lib/db';
 
 export async function GET(req: Request) {
+  const sql = getSql();
   const key = new URL(req.url).searchParams.get('key');
   if (!key) {
     return NextResponse.json({ valid: false, error: 'key required' }, { status: 400 });

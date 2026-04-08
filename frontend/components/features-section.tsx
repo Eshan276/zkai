@@ -151,8 +151,8 @@ function AIVisual({ accent }: { accent: string }) {
         {[0, 1, 2, 3, 4, 5].map((i) => {
           const angle = (i * 60 * Math.PI) / 180;
           const radius = 50;
-          const x = 100 + Math.cos(angle) * radius;
-          const y = 80 + Math.sin(angle) * radius;
+          const x = Math.round((100 + Math.cos(angle) * radius) * 100) / 100;
+          const y = Math.round((80 + Math.sin(angle) * radius) * 100) / 100;
 
           return (
             <g key={i}>

@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getSql } from '@/lib/db';
 
 interface Provider {
   id: string;
@@ -20,6 +20,7 @@ interface Provider {
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 async function verifyKey(key: string): Promise<{ walletAddress: string; coinPublicKey: string | null } | null> {
+  const sql = getSql();
   const rows = await sql`
     SELECT ak.wallet_address, u.coin_public_key
     FROM api_keys ak
@@ -33,6 +34,7 @@ async function verifyKey(key: string): Promise<{ walletAddress: string; coinPubl
 // ── Provider selection ────────────────────────────────────────────────────────
 
 async function getProviders(): Promise<Provider[]> {
+  const sql = getSql();
   const rows = await sql`
     SELECT id, endpoint, model, price, reputation
     FROM providers
@@ -57,6 +59,7 @@ function pickProvider(providers: Provider[], model: string): Provider | null {
 // ── Gateway handler ───────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
+  const sql = getSql();
   // 1. Auth
   const apiKey = req.headers.get('x-api-key') ?? req.headers.get('authorization')?.replace(/^Bearer /, '');
   if (!apiKey) {
