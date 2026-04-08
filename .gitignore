@@ -18,9 +18,8 @@ deploy/.bridge-seed
 *.env
 .env*
 
-# Deployment state
+# Deployment state — deploy/deployment.json is intentionally tracked (just contract addresses, not sensitive)
 deployment.json
-deploy/deployment.json
 
 # LevelDB wallet state
 midnight-level-db/

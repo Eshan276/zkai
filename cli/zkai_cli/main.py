@@ -106,7 +106,7 @@ def register(
     repo_dir: str = typer.Option(None, "--dir", "-d", help="zkai repo root"),
     endpoint: str = typer.Option(None, "--endpoint", "-e", help="Public endpoint URL (e.g. http://1.2.3.4:8080)"),
     model: str = typer.Option("qwen2.5-1.5b", "--model", "-m", help="Model name to advertise"),
-    price: int = typer.Option(100, "--price", "-p", help="Price per request in DUST units"),
+    price: int = typer.Option(100, "--price", "-p", help="Price per request in tNIGHT units"),
 ):
     """Register this provider on the Midnight chain (run once after first start)."""
     _register.register(repo_dir, endpoint=endpoint, model=model, price=price)

@@ -113,6 +113,21 @@ def env_file(repo: Path) -> Path:
     return compose_dir(repo) / ".env"
 
 
+def read_env_file(repo: Path) -> dict[str, str]:
+    """Parse provider/.env into a dict. Returns empty dict if file missing."""
+    ef = env_file(repo)
+    result: dict[str, str] = {}
+    if not ef.exists():
+        return result
+    for line in ef.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        result[k.strip()] = v.strip()
+    return result
+
+
 # ── Shell helpers ─────────────────────────────────────────────────────────────
 
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
