@@ -5,7 +5,7 @@ export async function GET() {
   const sql = getSql();
   try {
     const rows = await sql`
-      SELECT id, endpoint, model, price, reputation
+      SELECT id, endpoint, model, price, reputation, hardware
       FROM providers
       WHERE active = TRUE
       ORDER BY reputation DESC

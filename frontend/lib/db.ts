@@ -92,4 +92,6 @@ export async function initSchema() {
       updated_at     TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql`ALTER TABLE providers ADD COLUMN IF NOT EXISTS hardware JSONB`;
 }

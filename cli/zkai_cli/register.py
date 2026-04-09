@@ -98,12 +98,21 @@ def register(
     result = resp.json()
     tx_id = result.get("tx_id", "submitted")
 
+    # Fetch hardware info from enclave
+    hardware = None
+    try:
+        hw_resp = requests.get(f"{_ENCLAVE_URL}/health", timeout=5)
+        if hw_resp.ok:
+            hardware = hw_resp.json().get("hardware")
+    except Exception:
+        pass
+
     # Register in central DB so Vercel gateway can discover this provider
     if auth_url:
         try:
             r = requests.post(
                 f"{auth_url}/api/providers/register",
-                json={"provider_id": provider_id, "endpoint": endpoint, "model": model, "price": price},
+                json={"provider_id": provider_id, "endpoint": endpoint, "model": model, "price": price, "hardware": hardware},
                 timeout=15,
             )
             if r.ok:

@@ -222,7 +222,26 @@ def get_attestation():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "enclave_mode": os.environ.get("GRAMINE_MODE", "direct")}
+    hw: dict = {}
+    try:
+        # CPU model
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.startswith("model name"):
+                    hw["cpu_model"] = line.split(":", 1)[1].strip()
+                    break
+        # Core count
+        import subprocess
+        hw["cpu_cores"] = int(subprocess.check_output(["nproc"]).strip())
+        # RAM total (MB)
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal"):
+                    hw["ram_total_mb"] = int(line.split()[1]) // 1024
+                    break
+    except Exception:
+        pass
+    return {"status": "ok", "enclave_mode": os.environ.get("GRAMINE_MODE", "direct"), "hardware": hw}
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
