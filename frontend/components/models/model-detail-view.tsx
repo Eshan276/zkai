@@ -139,17 +139,17 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
       { label: "Context", value: `${formatContextLength(model.hero.contextLength)} tokens` },
       { label: "Input / 1M", value: model.hero.inputPrice },
       { label: "Output / 1M", value: model.hero.outputPrice },
-      { label: "Median TTFT", value: `${model.performance.summary.medianTtftMs} ms` },
-      { label: "Current Uptime", value: `${model.uptime.currentPercent.toFixed(2)}%` },
-      { label: "24h Requests", value: formatNumber(model.activity.requests24h) },
+      { label: "Median TTFT", value: model.performance?.summary.medianTtftMs != null ? `${model.performance.summary.medianTtftMs} ms` : "—" },
+      { label: "Current Uptime", value: model.uptime?.currentPercent != null ? `${model.uptime.currentPercent.toFixed(2)}%` : "—" },
+      { label: "24h Requests", value: model.activity?.requests24h != null ? formatNumber(model.activity.requests24h) : "—" },
     ],
     [
-      model.activity.requests24h,
+      model.activity?.requests24h,
       model.hero.contextLength,
       model.hero.inputPrice,
       model.hero.outputPrice,
-      model.performance.summary.medianTtftMs,
-      model.uptime.currentPercent,
+      model.performance?.summary.medianTtftMs,
+      model.uptime?.currentPercent,
     ],
   );
 
@@ -266,7 +266,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
             <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/60 p-3.5">
               <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Top Routing Providers</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {model.providers.distribution.slice(0, 4).map((provider) => (
+                {model.providers?.distribution.slice(0, 4).map((provider) => (
                   <span key={provider.provider} className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-1 text-xs text-slate-200/85">
                     {provider.provider} {provider.share.toFixed(1)}%
                   </span>
@@ -518,49 +518,53 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           description="Adoption momentum and top public apps currently using this model."
           icon={AppWindow}
         >
-          <div className="grid gap-4 lg:grid-cols-[1.25fr_0.95fr]">
-            <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
-              <p className="mb-2 text-sm text-slate-300">Weekly app adoption</p>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={model.apps.adoptionSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="appsGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.14)" />
-                    <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
-                    <Area yAxisId="left" type="monotone" dataKey="apps" stroke="#22d3ee" fill="url(#appsGrad)" name="Apps" strokeWidth={2} />
-                    <Line yAxisId="right" type="monotone" dataKey="requestsK" stroke="#f59e0b" name="Requests (K)" strokeWidth={2} dot={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
+          {model.apps && model.hasRealData.apps ? (
+            <div className="grid gap-4 lg:grid-cols-[1.25fr_0.95fr]">
+              <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
+                <p className="mb-2 text-sm text-slate-300">Weekly app adoption</p>
+                <div className="h-72 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={model.apps.adoptionSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="appsGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.14)" />
+                      <XAxis dataKey="week" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
+                      <Area yAxisId="left" type="monotone" dataKey="apps" stroke="#22d3ee" fill="url(#appsGrad)" name="Apps" strokeWidth={2} />
+                      <Line yAxisId="right" type="monotone" dataKey="requestsK" stroke="#f59e0b" name="Requests (K)" strokeWidth={2} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {model.apps.topApps.map((app) => (
+                  <div key={app.name} className="rounded-xl border border-white/10 bg-black/35 p-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-slate-100">{app.name}</p>
+                        <p className="text-xs text-slate-400">{app.category}</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-300/15 px-2 py-0.5 text-xs text-emerald-100">
+                        <TrendingUp className="h-3 w-3" />
+                        +{app.growthPercent}%
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-200">{app.calls}</p>
+                  </div>
+                ))}
               </div>
             </div>
-
-            <div className="grid gap-3">
-              {model.apps.topApps.map((app) => (
-                <div key={app.name} className="rounded-xl border border-white/10 bg-black/35 p-3.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-slate-100">{app.name}</p>
-                      <p className="text-xs text-slate-400">{app.category}</p>
-                    </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-300/15 px-2 py-0.5 text-xs text-emerald-100">
-                      <TrendingUp className="h-3 w-3" />
-                      +{app.growthPercent}%
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-200">{app.calls}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          ) : (
+            <p className="text-sm text-slate-400">No app adoption data available yet.</p>
+          )}
         </SectionCard>
 
         <SectionCard
@@ -569,64 +573,70 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           description="Request throughput and operation mix over the most recent 24-hour window."
           icon={Activity}
         >
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <MetricCard label="Requests (24h)" value={formatNumber(model.activity.requests24h)} tone="accent" />
-            <MetricCard
-              label="Peak Hour"
-              value={`${formatNumber(Math.max(...model.activity.requestSeries.map((point) => point.requests)))} req`}
-            />
-            <MetricCard
-              label="Avg Success"
-              value={`${(
-                model.activity.requestSeries.reduce((sum, point) => sum + point.successRate, 0) /
-                model.activity.requestSeries.length
-              ).toFixed(2)}%`}
-            />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-            <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
-              <p className="mb-2 text-sm text-slate-300">Hourly request and success trend</p>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={model.activity.requestSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.14)" />
-                    <XAxis dataKey="hour" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} interval={3} />
-                    <YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="right" orientation="right" domain={[95, 100]} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
-                    <Line yAxisId="left" dataKey="requests" stroke="#22d3ee" strokeWidth={2} dot={false} name="Requests" />
-                    <Line yAxisId="right" dataKey="successRate" stroke="#2dd4bf" strokeWidth={2} dot={false} name="Success %" />
-                  </LineChart>
-                </ResponsiveContainer>
+          {model.activity && model.hasRealData.activity ? (
+            <>
+              <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <MetricCard label="Requests (24h)" value={formatNumber(model.activity.requests24h)} tone="accent" />
+                <MetricCard
+                  label="Peak Hour"
+                  value={`${formatNumber(Math.max(...model.activity.requestSeries.map((point) => point.requests)))} req`}
+                />
+                <MetricCard
+                  label="Avg Success"
+                  value={`${(
+                    model.activity.requestSeries.reduce((sum, point) => sum + point.successRate, 0) /
+                    model.activity.requestSeries.length
+                  ).toFixed(2)}%`}
+                />
               </div>
-            </div>
 
-            <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
-              <p className="mb-2 text-sm text-slate-300">Operation mix</p>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={model.activity.operationMix}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={58}
-                      outerRadius={86}
-                      paddingAngle={3}
-                    >
-                      {model.activity.operationMix.map((entry, idx) => (
-                        <Cell key={entry.name} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+                <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
+                  <p className="mb-2 text-sm text-slate-300">Hourly request and success trend</p>
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={model.activity.requestSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.14)" />
+                        <XAxis dataKey="hour" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} interval={3} />
+                        <YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="right" orientation="right" domain={[95, 100]} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
+                        <Line yAxisId="left" dataKey="requests" stroke="#22d3ee" strokeWidth={2} dot={false} name="Requests" />
+                        <Line yAxisId="right" dataKey="successRate" stroke="#2dd4bf" strokeWidth={2} dot={false} name="Success %" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
+                  <p className="mb-2 text-sm text-slate-300">Operation mix</p>
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={model.activity.operationMix}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={58}
+                          outerRadius={86}
+                          paddingAngle={3}
+                        >
+                          {model.activity.operationMix.map((entry, idx) => (
+                            <Cell key={entry.name} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">No activity data yet. Data appears once requests are routed through zkAI.</p>
+          )}
         </SectionCard>
 
         <SectionCard
