@@ -4,6 +4,7 @@ import {
   fetchArtificialAnalysis,
   fetchProvidersForModel,
   fetchHourlyJobStats,
+  fetchJobPerformanceStats,
   matchAAModel,
   deriveCategory,
   deriveModalities,
@@ -34,9 +35,10 @@ export async function GET(
       return NextResponse.json({ error: 'Model not found' }, { status: 404 });
     }
 
-    const [dbProviders, hourlyStats] = await Promise.all([
+    const [dbProviders, hourlyStats, jobPerfStats] = await Promise.all([
       fetchProvidersForModel(slug),
       fetchHourlyJobStats(slug),
+      fetchJobPerformanceStats(slug),
     ]);
 
     const aaModel = matchAAModel(aaModels, orModel);
@@ -200,9 +202,12 @@ export async function GET(
           ? Math.round(aaModel.median_time_to_first_token_seconds * 1000)
           : 0;
 
-    const medianTokensPerSecond = aaModel?.median_output_tokens_per_second
-      ? Math.round(aaModel.median_output_tokens_per_second)
-      : 0;
+    const medianTokensPerSecond =
+      jobPerfStats.avgTps != null
+        ? Math.round(jobPerfStats.avgTps)
+        : aaModel?.median_output_tokens_per_second
+          ? Math.round(aaModel.median_output_tokens_per_second)
+          : 0;
 
     const qualityScore = aaModel?.artificial_analysis_intelligence_index
       ? Number((aaModel.artificial_analysis_intelligence_index as number).toFixed(1))
@@ -240,6 +245,8 @@ export async function GET(
       },
       latencySeries,
       benchmarkRadar,
+      ...(jobPerfStats.avgCpuPercent != null && { avgCpuPercent: Number(jobPerfStats.avgCpuPercent.toFixed(1)) }),
+      ...(jobPerfStats.avgRamMb != null && { avgRamMb: Number(jobPerfStats.avgRamMb.toFixed(0)) }),
     };
 
     // ─── Providers (from DB providers table) ──────────────────────────────────
@@ -280,6 +287,7 @@ export async function GET(
         price: p.price,
         reputation: p.reputation,
         hardware: p.hardware,
+        avgLatencyMs: p.avg_latency_ms ?? null,
       })),
     };
 

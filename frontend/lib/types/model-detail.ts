@@ -7,6 +7,8 @@ export interface ZkaiProviderRecord {
   hardware?: Record<string, unknown>;
   /** Computed from jobs table -- success rate for recent jobs, null when no jobs exist. */
   uptime?: number;
+  /** Average job duration in ms across all attested completed jobs, null when no jobs yet. */
+  avgLatencyMs?: number | null;
 }
 
 export interface ModelHeroData {
@@ -102,6 +104,9 @@ export interface ModelPerformanceData {
     metric: string;
     score: number;
   }>;
+  /** Computed from real job telemetry -- present when jobs have cpu_percent / ram_mb data. */
+  avgCpuPercent?: number;
+  avgRamMb?: number;
 }
 
 export interface ModelAppsData {

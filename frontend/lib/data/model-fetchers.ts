@@ -71,6 +71,8 @@ export interface DBProvider {
   price: number;
   reputation: number;
   hardware?: Record<string, unknown>;
+  /** Average job duration in ms across all attested completed jobs, null when no jobs yet. */
+  avg_latency_ms?: number | null;
 }
 
 export interface LatencyStat {
@@ -116,15 +118,46 @@ export async function fetchArtificialAnalysis(): Promise<AAModel[]> {
 }
 
 export async function fetchInternalProviders(): Promise<DBProvider[]> {
+  const remoteUrl = process.env.PROVIDERS_API_URL?.trim();
+  if (remoteUrl) {
+    try {
+      const res = await fetch(remoteUrl, {
+        headers: { Accept: 'application/json' },
+        next: { revalidate: 30 },
+      });
+      if (res.ok) {
+        const rows = (await res.json()) as unknown;
+        if (Array.isArray(rows)) return rows as DBProvider[];
+      }
+    } catch {
+      /* fall through to DB */
+    }
+  }
+
   try {
     const sql = getSql();
     const rows = await sql`
-      SELECT id, endpoint, model, price, reputation, hardware
-      FROM providers
-      WHERE active = TRUE
-      ORDER BY reputation DESC
+      SELECT
+        p.id,
+        p.endpoint,
+        p.model,
+        p.price,
+        p.reputation,
+        p.hardware,
+        AVG(j.duration_ms)::float AS avg_latency_ms
+      FROM providers p
+      LEFT JOIN jobs j
+        ON j.provider_id = p.id
+        AND j.duration_ms IS NOT NULL
+        AND j.attestation_hash IS NOT NULL
+      WHERE p.active = TRUE
+      GROUP BY p.id, p.endpoint, p.model, p.price, p.reputation, p.hardware
+      ORDER BY p.reputation DESC
     `;
-    return rows as unknown as DBProvider[];
+    return (rows as unknown as Array<DBProvider & { avg_latency_ms: string | null }>).map((r) => ({
+      ...r,
+      avg_latency_ms: r.avg_latency_ms != null ? Math.round(parseFloat(r.avg_latency_ms)) : null,
+    }));
   } catch {
     return [];
   }
@@ -136,6 +169,7 @@ export interface DBProviderForModel {
   price: number;
   reputation: number;
   hardware?: Record<string, unknown>;
+  avg_latency_ms?: number | null;
 }
 
 export interface HourlyJobStat {
@@ -148,29 +182,18 @@ export interface HourlyJobStat {
 }
 
 export async function fetchProvidersForModel(slug: string): Promise<DBProviderForModel[]> {
-  try {
-    const sql = getSql();
-    const modelPart = slug.split('/')[1] ?? slug;
-    const rows = await sql`
-      SELECT id, endpoint, price, reputation, hardware
-      FROM providers
-      WHERE (model = ${slug} OR model = ${modelPart})
-        AND active = TRUE
-      ORDER BY reputation DESC
-    `;
-    return (rows as unknown as Array<{
-      id: string; endpoint: string; price: string | number;
-      reputation: string | number; hardware: unknown;
-    }>).map((r) => ({
+  const providers = await fetchInternalProviders();
+  const matched = providers.filter((p) => providerMatchesOpenRouterSlug(p, slug));
+  return matched
+    .map((r) => ({
       id: r.id,
       endpoint: r.endpoint,
       price: typeof r.price === 'string' ? parseFloat(r.price) : r.price,
       reputation: typeof r.reputation === 'string' ? parseFloat(r.reputation) : r.reputation,
       hardware: r.hardware as Record<string, unknown> | undefined,
-    }));
-  } catch {
-    return [];
-  }
+      avg_latency_ms: r.avg_latency_ms ?? null,
+    }))
+    .sort((a, b) => b.reputation - a.reputation);
 }
 
 export async function fetchHourlyJobStats(slug: string): Promise<HourlyJobStat[]> {
@@ -226,6 +249,46 @@ export async function fetchLatencyStats(): Promise<LatencyStat[]> {
     }));
   } catch {
     return [];
+  }
+}
+
+// ─── Job-level performance stats ─────────────────────────────────────────────
+
+export interface JobPerformanceStats {
+  avgTps: number | null;
+  avgCpuPercent: number | null;
+  avgRamMb: number | null;
+}
+
+export async function fetchJobPerformanceStats(slug: string): Promise<JobPerformanceStats> {
+  try {
+    const sql = getSql();
+    const modelPart = slug.split('/')[1] ?? slug;
+    const rows = await sql`
+      SELECT
+        AVG(
+          (COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0))::float
+          / NULLIF(duration_ms, 0) * 1000
+        ) AS avg_tps,
+        AVG(cpu_percent)  AS avg_cpu_percent,
+        AVG(ram_mb)       AS avg_ram_mb
+      FROM jobs
+      WHERE (model = ${slug} OR model = ${modelPart})
+        AND duration_ms > 0
+        AND attestation_hash IS NOT NULL
+    `;
+    const r = (rows as unknown as Array<{
+      avg_tps: string | null;
+      avg_cpu_percent: string | null;
+      avg_ram_mb: string | null;
+    }>)[0];
+    return {
+      avgTps: r?.avg_tps != null ? parseFloat(r.avg_tps) : null,
+      avgCpuPercent: r?.avg_cpu_percent != null ? parseFloat(r.avg_cpu_percent) : null,
+      avgRamMb: r?.avg_ram_mb != null ? parseFloat(r.avg_ram_mb) : null,
+    };
+  } catch {
+    return { avgTps: null, avgCpuPercent: null, avgRamMb: null };
   }
 }
 
@@ -294,14 +357,39 @@ export function deriveTags(orModel: ORModel): string[] {
   return tags;
 }
 
+// ─── Provider → OpenRouter alias overrides ────────────────────────────────────
+//
+// Use this when a provider runs a model that doesn't exist on OpenRouter.
+// The value is the OR slug whose metadata (description, context, capabilities)
+// will be borrowed; the display name is still derived from the provider model.
+//
+export const PROVIDER_OR_ALIASES: Record<string, string> = {
+  'qwen2.5:1.5b': 'qwen/qwen-2.5-7b-instruct',
+};
+
 // ─── Matching ─────────────────────────────────────────────────────────────────
 
+/** Normalize Ollama-style ids (e.g. qwen2.5:1.5b) vs OpenRouter slugs (qwen2.5-1.5b-instruct). */
+function normalizeProviderModelId(s: string): string {
+  return s.toLowerCase().trim().replace(/:/g, '-').replace(/_/g, '-');
+}
+
+/** True if a registered provider row corresponds to this OpenRouter model slug. */
+export function providerMatchesOpenRouterSlug(p: DBProvider, orSlug: string): boolean {
+  const modelPart = orSlug.split('/')[1] ?? orSlug;
+  const partNorm = normalizeProviderModelId(modelPart);
+  const slugNorm = normalizeProviderModelId(orSlug);
+  const pm = normalizeProviderModelId(p.model);
+  if (p.model === orSlug || p.model === modelPart || orSlug.endsWith(`/${p.model}`)) return true;
+  if (pm === partNorm || pm === slugNorm) return true;
+  if (partNorm.startsWith(`${pm}-`) || pm.startsWith(`${partNorm}-`)) return true;
+  // Alias: provider model points to this OR slug
+  if (PROVIDER_OR_ALIASES[p.model] === orSlug) return true;
+  return false;
+}
+
 export function matchProvider(providers: DBProvider[], orModel: ORModel): DBProvider | undefined {
-  const slug = orModel.slug;
-  const modelPart = slug.split('/')[1] ?? slug;
-  return providers.find(
-    (p) => p.model === slug || p.model === modelPart || slug.endsWith('/' + p.model),
-  );
+  return providers.find((p) => providerMatchesOpenRouterSlug(p, orModel.slug));
 }
 
 export function matchAAModel(aaModels: AAModel[], orModel: ORModel): AAModel | undefined {
@@ -350,9 +438,20 @@ export function transformModel(
   const createdAt = orModel.created_at ? new Date(orModel.created_at) : new Date(0);
   const isNew = Date.now() - createdAt.getTime() < 30 * 24 * 60 * 60 * 1000;
 
+  // When the provider uses an alias (e.g. qwen2.5:1.5b → qwen-2.5-7b-instruct),
+  // show the provider's real model name but keep all OR metadata.
+  const aliasedProviderModel = provider ? PROVIDER_OR_ALIASES[provider.model] : undefined;
+  const isAliased = aliasedProviderModel === orModel.slug;
+  const displayName = isAliased && provider
+    ? prettyModelName(provider.model)
+    : (orModel.short_name ?? orModel.name);
+  const displayTokens = isAliased && provider
+    ? extractTokenCount(provider.model)
+    : extractTokenCount(orModel.name);
+
   const result: MergedModel = {
     id: orModel.slug,
-    name: orModel.short_name ?? orModel.name,
+    name: displayName,
     provider: orModel.author_display_name ?? orModel.author,
     author: orModel.author,
     description: orModel.description ?? '',
@@ -360,7 +459,7 @@ export function transformModel(
     inputPriceRaw,
     inputPrice: isFree ? 'Free' : formatPrice(inputPriceRaw),
     outputPrice: isFree ? 'Free' : formatPrice(outputPriceRaw),
-    tokens: extractTokenCount(orModel.name),
+    tokens: displayTokens,
     category: deriveCategory(orModel.input_modalities, orModel.output_modalities),
     modalities: deriveModalities(orModel.input_modalities),
     series: orModel.group ? [orModel.group] : [],
@@ -391,6 +490,74 @@ export function transformModel(
       medianOutputTokensPerSecond: aaBenchmark.median_output_tokens_per_second,
       medianTimeToFirstTokenSeconds: aaBenchmark.median_time_to_first_token_seconds,
     };
+  }
+
+  return result;
+}
+
+// ─── Synthesize a MergedModel from a provider row when OpenRouter has no match ─
+
+/** Derive a pretty display name from an Ollama-style model id (e.g. "qwen2.5:1.5b" → "Qwen2.5 1.5B"). */
+function prettyModelName(model: string): string {
+  const base = model.split(':')[0];
+  const tag = model.includes(':') ? model.split(':')[1] : undefined;
+  const name = base
+    .split(/[-_]/)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
+  return tag ? `${name} ${tag.toUpperCase()}` : name;
+}
+
+/** Guess the author from an Ollama-style model id (e.g. "qwen2.5:1.5b" → "qwen"). */
+function guessAuthor(model: string): string {
+  const base = model.split(':')[0].split('/')[0];
+  for (const oss of OSS_AUTHORS) {
+    if (base.toLowerCase().startsWith(oss)) return oss;
+  }
+  return base.toLowerCase();
+}
+
+export function synthesizeProviderModel(
+  provider: DBProvider,
+  latencyStats: LatencyStat[],
+): MergedModel {
+  const modelId = `provider/${provider.id}/${provider.model}`;
+  const name = prettyModelName(provider.model);
+  const author = guessAuthor(provider.model);
+  const tokens = extractTokenCount(provider.model);
+  const latencyStat = latencyStats.find(
+    (l) => l.model === provider.model || l.model === provider.id,
+  );
+
+  const result: MergedModel = {
+    id: modelId,
+    name,
+    provider: author,
+    author,
+    description: `Self-hosted model available via the ZKai provider network.`,
+    contextLength: 0,
+    inputPriceRaw: provider.price,
+    inputPrice: formatPrice(provider.price),
+    outputPrice: formatPrice(provider.price),
+    tokens,
+    category: 'text',
+    modalities: ['Text'],
+    series: [],
+    categories: [],
+    supportedParams: [],
+    distillable: false,
+    isNew: false,
+    isFree: provider.price === 0,
+    isOpenSource: OSS_AUTHORS.has(author),
+    date: '',
+    zkaiProvider: provider.id,
+    zkaiPrice: provider.price,
+  };
+
+  if (provider.hardware) result.zkaiHardware = provider.hardware;
+  if (latencyStat) {
+    result.zkaiLatencyMs = latencyStat.avg_ms;
+    result.zkaiUptime = latencyStat.success_rate;
   }
 
   return result;

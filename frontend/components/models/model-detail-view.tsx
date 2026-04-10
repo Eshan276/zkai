@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import {
   Check,
   Copy,
-  ExternalLink,
+  Cpu,
+  HardDrive,
+  MemoryStick,
   Shield,
   Sparkles,
   TrendingUp,
@@ -339,32 +341,101 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                   <p className="mb-3 flex items-center gap-1.5 text-xs text-teal-300">
                     <Shield className="h-3 w-3" /> zkAI Providers
                   </p>
-                  <div className="divide-y divide-white/6">
-                    {model.providers.zkaiProviders.map((provider) => (
-                      <div key={provider.id} className="flex items-center justify-between gap-4 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-mono text-sm text-white">{provider.endpoint}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">ID: {provider.id}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-5 text-right">
-                          <div>
-                            <p className="text-[11px] text-slate-500">Price/req</p>
-                            <p className="text-sm text-white">${provider.price.toFixed(4)}</p>
+                  <div className="space-y-3">
+                    {model.providers.zkaiProviders.map((provider) => {
+                      const hw = provider.hardware as Record<string, unknown> | undefined;
+                      const cpuModel = hw?.cpu_model as string | undefined;
+                      const cpuCores = hw?.cpu_cores as number | undefined;
+                      const ramMb = hw?.ram_total_mb as number | undefined;
+                      const gpu = hw?.gpu as string | undefined;
+                      const hasHardware = cpuModel || cpuCores != null || ramMb != null || gpu;
+                      return (
+                        <div key={provider.id} className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-4 space-y-3">
+                          {/* Top row: endpoint + stats */}
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="truncate font-mono text-sm text-white">{provider.endpoint}</p>
+                              <p className="mt-0.5 font-mono text-[10px] text-slate-600 truncate">ID: {provider.id}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-5 text-right">
+                              <div>
+                                <p className="text-[11px] text-slate-500">Price / req</p>
+                                <p className="text-sm text-white">{provider.price} <span className="text-xs text-slate-500">tNIGHT</span></p>
+                              </div>
+                              {provider.avgLatencyMs != null && (
+                                <div>
+                                  <p className="text-[11px] text-slate-500">Avg latency</p>
+                                  <p className="text-sm text-white">
+                                    {provider.avgLatencyMs >= 1000
+                                      ? `${(provider.avgLatencyMs / 1000).toFixed(1)}s`
+                                      : `${provider.avgLatencyMs}ms`}
+                                  </p>
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-[11px] text-slate-500">Reputation</p>
+                                <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                                  <div className="h-1 w-12 rounded-full bg-white/10 overflow-hidden">
+                                    <div className="h-full bg-teal-400 rounded-full" style={{ width: `${Math.round(provider.reputation * 100)}%` }} />
+                                  </div>
+                                  <p className="text-sm text-white">{(provider.reputation * 100).toFixed(0)}%</p>
+                                </div>
+                              </div>
+                              {provider.uptime !== undefined && (
+                                <div>
+                                  <p className="text-[11px] text-slate-500">Uptime</p>
+                                  <p className="text-sm text-emerald-300">{(provider.uptime * 100).toFixed(1)}%</p>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-[11px] text-slate-500">Reputation</p>
-                            <p className="text-sm text-white">{provider.reputation.toFixed(2)}</p>
-                          </div>
-                          {provider.uptime !== undefined && (
-                            <div>
-                              <p className="text-[11px] text-slate-500">Uptime</p>
-                              <p className="text-sm text-emerald-300">{(provider.uptime * 100).toFixed(1)}%</p>
+
+                          {/* Hardware details */}
+                          {hasHardware && (
+                            <div className="border-t border-white/[0.06] pt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              {cpuModel && (
+                                <div className="sm:col-span-2 flex items-start gap-2">
+                                  <Cpu className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-600" />
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-600">CPU</p>
+                                    <p className="text-xs text-slate-300 mt-0.5 leading-snug">{cpuModel}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {cpuCores != null && (
+                                <div className="flex items-start gap-2">
+                                  <HardDrive className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-600" />
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-600">Cores</p>
+                                    <p className="text-xs text-slate-300 mt-0.5">{cpuCores}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {ramMb != null && (
+                                <div className="flex items-start gap-2">
+                                  <MemoryStick className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-600" />
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-600">RAM</p>
+                                    <p className="text-xs text-slate-300 mt-0.5">
+                                      {ramMb >= 1024 ? `${(ramMb / 1024).toFixed(1)} GB` : `${ramMb} MB`}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                              {gpu && (
+                                <div className="sm:col-span-2 flex items-start gap-2">
+                                  <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-600" />
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-600">GPU</p>
+                                    <p className="text-xs text-slate-300 mt-0.5">{gpu}</p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
-                          <ExternalLink className="h-3.5 w-3.5 text-slate-600" />
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -433,12 +504,42 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
             <>
               <StatRow
                 stats={[
-                  { label: "Median TTFT", value: `${model.performance.summary.medianTtftMs} ms` },
-                  { label: "Median Output", value: `${model.performance.summary.medianTokensPerSecond} tok/s` },
-                  { label: "P95 Latency", value: `${model.performance.summary.p95LatencyMs} ms` },
-                  { label: "Quality Index", value: `${model.performance.summary.qualityScore}` },
+                  { label: "Median TTFT", value: model.performance.summary.medianTtftMs > 0 ? `${model.performance.summary.medianTtftMs} ms` : "—" },
+                  { label: "Tok / sec", value: model.performance.summary.medianTokensPerSecond > 0 ? `${model.performance.summary.medianTokensPerSecond}` : "—" },
+                  { label: "P95 Latency", value: model.performance.summary.p95LatencyMs > 0 ? `${model.performance.summary.p95LatencyMs} ms` : "—" },
+                  { label: "Quality Index", value: model.performance.summary.qualityScore > 0 ? `${model.performance.summary.qualityScore}` : "—" },
                 ]}
               />
+
+              {/* Real telemetry from jobs: CPU + RAM */}
+              {(model.performance.avgCpuPercent != null || model.performance.avgRamMb != null) && (
+                <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {model.performance.avgCpuPercent != null && (
+                    <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3.5 flex items-start gap-2.5">
+                      <Cpu className="h-4 w-4 mt-0.5 shrink-0 text-slate-500" />
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">Avg CPU</p>
+                        <p className="mt-1 text-xl font-semibold tracking-tight text-white">{model.performance.avgCpuPercent.toFixed(1)}%</p>
+                        <p className="text-[10px] text-slate-600 mt-0.5">per request</p>
+                      </div>
+                    </div>
+                  )}
+                  {model.performance.avgRamMb != null && (
+                    <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3.5 flex items-start gap-2.5">
+                      <MemoryStick className="h-4 w-4 mt-0.5 shrink-0 text-slate-500" />
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">Avg RAM</p>
+                        <p className="mt-1 text-xl font-semibold tracking-tight text-white">
+                          {model.performance.avgRamMb >= 1024
+                            ? `${(model.performance.avgRamMb / 1024).toFixed(1)} GB`
+                            : `${Math.round(model.performance.avgRamMb)} MB`}
+                        </p>
+                        <p className="text-[10px] text-slate-600 mt-0.5">per request</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mt-8 grid gap-6 lg:grid-cols-2">
                 <div>
