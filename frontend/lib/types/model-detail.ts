@@ -1,3 +1,14 @@
+/** A single zkAI provider record from the internal `providers` DB table. */
+export interface ZkaiProviderRecord {
+  id: string;
+  endpoint: string;
+  price: number;
+  reputation: number;
+  hardware?: Record<string, unknown>;
+  /** Computed from jobs table -- success rate for recent jobs, null when no jobs exist. */
+  uptime?: number;
+}
+
 export interface ModelHeroData {
   slug: string;
   name: string;
@@ -18,6 +29,8 @@ export interface ModelHeroData {
   isNew: boolean;
   lastUpdated: string;
   supportsReasoning: boolean;
+  /** Best-matching zkAI provider for this model (highest reputation), if any exists. */
+  zkaiProvider?: ZkaiProviderRecord;
 }
 
 export interface ModelPriceData {
@@ -46,7 +59,8 @@ export interface ModelUptimeData {
     uptime: number;
     errorRate: number;
   }>;
-  regions: Array<{
+  /** Regional breakdown -- only available when external provider data exists. */
+  regions?: Array<{
     region: string;
     uptime: number;
     latencyMs: number;
@@ -67,6 +81,8 @@ export interface ModelProvidersData {
     uptime: number;
     throughputRps: number;
   }>;
+  /** All active zkAI providers for this model from the internal `providers` table. */
+  zkaiProviders?: ZkaiProviderRecord[];
 }
 
 export interface ModelPerformanceData {
@@ -81,7 +97,8 @@ export interface ModelPerformanceData {
     p50: number;
     p95: number;
   }>;
-  benchmarkRadar: Array<{
+  /** Benchmark radar data -- only available when Artificial Analysis data exists. */
+  benchmarkRadar?: Array<{
     metric: string;
     score: number;
   }>;
@@ -125,13 +142,37 @@ export interface ModelApiData {
   sampleResponse: string;
 }
 
+/**
+ * Per-section data-availability flags. The API always returns this object so the
+ * UI can decide whether to render a section or show an empty state without
+ * needing to inspect the section data itself.
+ */
+export interface ModelDataAvailability {
+  price: boolean;
+  uptime: boolean;
+  performance: boolean;
+  providers: boolean;
+  activity: boolean;
+  apps: boolean;
+}
+
 export interface ModelDetailViewModel {
+  /** Always populated from the OpenRouter catalog. */
   hero: ModelHeroData;
-  price: ModelPriceData;
-  uptime: ModelUptimeData;
-  providers: ModelProvidersData;
-  performance: ModelPerformanceData;
-  apps: ModelAppsData;
-  activity: ModelActivityData;
+  /** OpenRouter pricing data -- always present when the model exists in catalog. */
+  price?: ModelPriceData;
+  /** Populated from jobs table aggregations -- absent when no jobs exist for this model. */
+  uptime?: ModelUptimeData;
+  /** Populated from providers + jobs tables -- absent when no providers exist. */
+  providers?: ModelProvidersData;
+  /** Populated from jobs table percentiles -- absent when no jobs exist. */
+  performance?: ModelPerformanceData;
+  /** No current real data source -- always absent in production. */
+  apps?: ModelAppsData;
+  /** Populated from jobs table hourly aggregations -- absent when no jobs exist. */
+  activity?: ModelActivityData;
+  /** Always populated (template-based using the model slug). */
   api: ModelApiData;
+  /** Flags indicating which sections contain real data vs empty state. */
+  hasRealData: ModelDataAvailability;
 }

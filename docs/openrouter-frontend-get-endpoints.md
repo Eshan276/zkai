@@ -18,6 +18,82 @@ Traffic also includes Clerk, analytics (PostHog, GTM), Datadog, Cloudflare RUM, 
 
 ---
 
+## zkAI frontend: what we call vs what we merge
+
+The zkAI Next.js app does **not** mirror all of the endpoints below. Today it fetches **one** OpenRouter frontend URL:
+
+| Called by us | Location |
+|--------------|----------|
+| `GET https://openrouter.ai/api/frontend/models` | `frontend/app/api/models/route.ts` |
+
+Everything else in the endpoint table is **reference** (what OpenRouter’s own model pages hit in the browser). Our catalog UI loads merged data from **`GET /api/models`** (our route), which combines that OpenRouter response with internal DB data and optional third-party benchmarks.
+
+---
+
+## Data mapping: OpenRouter vs zkAI vs other sources
+
+Merged objects follow `MergedModel` in `frontend/lib/types/model.ts` and are built in `frontend/app/api/models/route.ts`.
+
+### From OpenRouter (`/api/frontend/models` → each catalog item)
+
+Used for identity, copy, modalities, and **default** pricing when no internal provider matches that model:
+
+| OpenRouter field(s) | Becomes / drives |
+|----------------------|------------------|
+| `slug` | `id` (stable key) |
+| `short_name` / `name` | `name` |
+| `author_display_name` / `author` | `provider`, `author` |
+| `description` | `description` |
+| `context_length` | `contextLength` |
+| `input_modalities`, `output_modalities` | `category`, `modalities`, tag heuristics |
+| `group` | `series` |
+| `created_at` | `date`, `isNew` |
+| `hf_slug`, `author` | `isOpenSource` (heuristic) |
+| `supports_reasoning`, `is_trainable_text`, `name`, modalities | `categories` tags |
+| `endpoint.pricing` (prompt / completion) | **Displayed** input/output price when no zkAI provider match (`inputPriceRaw`, formatted prices) |
+| `endpoint.supported_parameters` | `supportedParams`, some tags |
+| `endpoint.is_free` | contributes to `isFree` |
+
+### From zkAI providers (our database)
+
+Active rows come from the **`providers`** table (`id`, `endpoint`, `model`, `price`, `reputation`, `hardware`). A row is **matched** to an OpenRouter model when `providers.model` aligns with the OpenRouter `slug` or its local name segment (see `matchProvider` in `models/route.ts`).
+
+When matched, **our** data overrides pricing and adds provider-specific fields:
+
+| Source | Field on `MergedModel` / behavior |
+|--------|----------------------------------|
+| `providers.id` | `zkaiProvider` |
+| `providers.price` | `zkaiPrice`; also **replaces** `inputPriceRaw` / `outputPriceRaw` (and thus formatted prices) for both input and output in the current merge logic |
+| `providers.hardware` | `zkaiHardware` |
+| Aggregates over **`jobs`** (duration + attestation): `AVG(duration_ms)`, success rate by `model` | `zkaiLatencyMs`, `zkaiUptime` (only when a provider match exists) |
+
+Exposed directly (no OpenRouter merge) for dashboards:
+
+| Route | Data |
+|-------|------|
+| `GET /api/providers` | JSON array of active providers: `id`, `endpoint`, `model`, `price`, `reputation`, `hardware` |
+
+`reputation` and `endpoint` are included here for dashboards; they are **not** copied onto each item in `GET /api/models` today (only the `zkai*` fields above are merged when a provider matches).
+
+### From Artificial Analysis (third party, not OpenRouter)
+
+With `ARTIFICIAL_ANALYSIS_API_KEY` set, `GET https://artificialanalysis.ai/api/v2/data/llms/models` supplies optional `benchmarks` on `MergedModel` (intelligence / coding / math indices, median tokens/s, TTFT). Matching is fuzzy on model name/slug.
+
+---
+
+## Other `frontend/app/api` routes (not OpenRouter catalog)
+
+These routes serve auth, relay, escrow, and chat; they do **not** pull from the OpenRouter frontend JSON endpoints above:
+
+- `GET /api/auth/me`, `POST` auth challenge/verify/key flows  
+- `GET /api/jobs` — job listing (may include `model`, latency fields from our jobs, not from OpenRouter stats APIs)  
+- `POST /api/v1/chat/completions` — inference path  
+- `GET /api/relay-config`, escrow and provider register/deregister routes  
+
+For **model list/detail UI**, the relevant surfaces are **`/api/models`** (merged catalog) and **`/api/providers`** (registry snapshot).
+
+---
+
 ## Endpoints
 
 | # | Method & path | Purpose |

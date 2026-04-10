@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import Link from "next/link";
 import {
   Search, Grid3X3, List, X, Check, ChevronDown, Copy,
   Sparkles, MessageSquare, Image, Music, Video, Cpu,
@@ -160,7 +161,7 @@ const modalityIconMap: Record<string, React.ElementType> = {
 function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: number; viewMode: "grid" | "list" }) {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold: 0.05 });
@@ -170,6 +171,7 @@ function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: n
 
   const handleCopy = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     navigator.clipboard.writeText(model.id);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -177,18 +179,19 @@ function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: n
 
   const Icon = modalityIconMap[model.category] ?? MessageSquare;
   const delay = `${Math.min(index * 40, 320)}ms`;
+  const href = `/model/${encodeURIComponent(model.id)}`;
 
   if (viewMode === "list") {
     return (
       <div
-        ref={ref}
+        ref={ref as React.RefObject<HTMLDivElement>}
         className={cn(
           "group border-b border-white/10 transition-all duration-500",
           visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         )}
         style={{ transitionDelay: delay }}
       >
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6 py-4 px-3 hover:bg-white/[0.03] rounded-lg transition-colors">
+        <Link href={href} className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6 py-4 px-3 hover:bg-white/[0.03] rounded-lg transition-colors">
           <div className="flex-1 min-w-0 flex items-start gap-3">
             <div className="shrink-0 w-9 h-9 rounded-lg bg-white/[0.06] flex items-center justify-center group-hover:bg-white/[0.12] transition-colors">
               <Icon className="w-4 h-4 text-white/65" />
@@ -197,7 +200,7 @@ function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: n
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-base font-semibold leading-tight tracking-tight">{model.name}</h3>
                 <button onClick={handleCopy} className="p-0.5 rounded hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100">
-                  {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-white/45" />}
+                  {copied ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3 text-white/45" />}
                 </button>
                 {model.isNew && <span className="px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider bg-white text-black rounded-full">New</span>}
                 {model.isFree && <span className="px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider bg-white/10 text-white/75 rounded-full">Free</span>}
@@ -228,16 +231,17 @@ function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: n
               <div className="text-[10px] text-white/35">output/M</div>
             </div>
           </div>
-        </div>
+        </Link>
       </div>
     );
   }
 
   return (
-    <div
-      ref={ref}
+    <Link
+      href={href}
+      ref={ref as React.RefObject<HTMLAnchorElement>}
       className={cn(
-        "group relative bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden transition-all duration-500 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-md hover:-translate-y-0.5",
+        "group relative bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden transition-all duration-500 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-md hover:-translate-y-0.5 block",
         visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
       )}
       style={{ transitionDelay: delay }}
@@ -252,7 +256,7 @@ function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: n
               <div className="flex items-center gap-1.5">
                 <h3 className="text-base font-semibold tracking-tight truncate">{model.name}</h3>
                 <button onClick={handleCopy} className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100">
-                  {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-white/45" />}
+                  {copied ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3 text-white/45" />}
                 </button>
               </div>
               <p className="text-xs text-white/45">by {model.author}</p>
@@ -289,7 +293,7 @@ function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: n
         </div>
       </div>
       <div className="absolute bottom-0 left-0 right-0 h-px bg-white scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left" />
-    </div>
+    </Link>
   );
 }
 
@@ -550,7 +554,6 @@ export function ModelsContent() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     fetch("/api/models")
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -613,7 +616,7 @@ export function ModelsContent() {
     });
 
     return result;
-  }, [search, category, filters, sort]);
+  }, [models, search, category, filters, sort]);
 
   const activeFilterCount =
     filters.modalities.length + filters.series.length + filters.categories.length +
@@ -629,7 +632,6 @@ export function ModelsContent() {
 
       {/* ── Right Panel ───────────────────────────────── */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_6%,rgba(165,243,208,0.08)_0%,transparent_28%),radial-gradient(circle_at_22%_80%,rgba(255,158,141,0.07)_0%,transparent_30%)]" />
 
         {/* Top bar: search + controls */}
         <div className="relative shrink-0 border-b border-white/10 px-4 py-3 lg:px-6">
@@ -754,12 +756,12 @@ export function ModelsContent() {
 
         {/* Error banner */}
         {fetchError && !loading && (
-          <div className="shrink-0 flex items-center gap-2.5 px-4 lg:px-6 py-2.5 bg-red-950/40 border-b border-red-500/20 text-red-300 text-xs">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+          <div className="shrink-0 flex items-center gap-2.5 px-4 lg:px-6 py-2.5 bg-white/[0.04] border-b border-white/10 text-white/60 text-xs">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-white/50" />
             <span>Could not load models: {fetchError}</span>
             <button
               onClick={() => setFetchError(null)}
-              className="ml-auto shrink-0 p-0.5 rounded hover:bg-red-500/20 transition-colors"
+              className="ml-auto shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
               aria-label="Dismiss error"
             >
               <X className="w-3.5 h-3.5" />
