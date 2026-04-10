@@ -560,6 +560,120 @@ export async function fetchORBenchmarks(slug: string): Promise<ORBenchmarkResult
   return { aaBenchmarks, designArena, eloBounds };
 }
 
+// ─── OpenRouter apps / activity / uptime data ─────────────────────────────────
+
+export interface ORActivityDay {
+  date: string;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  count: number;
+  total_tool_calls: number;
+}
+
+export interface ORTopApp {
+  rank: number;
+  total_tokens: string;
+  total_requests: number;
+  app: {
+    id: number;
+    title: string;
+    description: string | null;
+    origin_url: string | null;
+    favicon_url: string | null;
+    categories: string[];
+  };
+}
+
+export interface ORAppsActivityResult {
+  activitySeries: ORActivityDay[];
+  topApps: ORTopApp[];
+}
+
+export interface ORUptimeProviderSeries {
+  providerId: string;
+  series: Array<{ date: string; uptime: number }>;
+}
+
+export interface ORUptimeResult {
+  providers: ORUptimeProviderSeries[];
+  uptimeGraphUrl?: string;
+  comparisonGraphUrl?: string;
+  finishReasonGraphUrl?: string;
+}
+
+/**
+ * Fetch top-apps + daily activity data from OpenRouter's frontend stats API.
+ * Uses the top-apps-for-model endpoint which includes both top_apps and
+ * top_apps_chart (daily token usage series).
+ */
+export async function fetchORAppsActivity(permaslug: string): Promise<ORAppsActivityResult> {
+  try {
+    const url = `https://openrouter.ai/api/frontend/stats/top-apps-for-model?permaslug=${encodeURIComponent(permaslug)}&variant=standard`;
+    const res = await fetch(url, {
+      headers: { Accept: '*/*', Referer: `https://openrouter.ai/${permaslug}` },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return { activitySeries: [], topApps: [] };
+    const json = await res.json() as {
+      data?: {
+        top_apps?: ORTopApp[];
+        top_apps_chart?: ORActivityDay[];
+      };
+    };
+    return {
+      activitySeries: json.data?.top_apps_chart ?? [],
+      topApps: json.data?.top_apps ?? [],
+    };
+  } catch {
+    return { activitySeries: [], topApps: [] };
+  }
+}
+
+/**
+ * Fetch per-provider uptime series + Datadog graph embed URLs from OpenRouter.
+ * uptime-recent returns a map of endpointUUID → [{date, uptime}] for last 3 days.
+ * uptime-graphs returns Datadog embed URLs for the live charts.
+ */
+export async function fetchORUptime(permaslug: string): Promise<ORUptimeResult> {
+  const headers = { Accept: '*/*', Referer: `https://openrouter.ai/${permaslug}` };
+
+  const [recentRes, graphsRes] = await Promise.all([
+    fetch(
+      `https://openrouter.ai/api/frontend/stats/uptime-recent?permaslug=${encodeURIComponent(permaslug)}`,
+      { headers, next: { revalidate: 120 } },
+    ).catch(() => null),
+    fetch(
+      `https://openrouter.ai/api/frontend/uptime-graphs?permaslug=${encodeURIComponent(permaslug)}&variant=standard`,
+      { headers, next: { revalidate: 300 } },
+    ).catch(() => null),
+  ]);
+
+  let providers: ORUptimeProviderSeries[] = [];
+  if (recentRes?.ok) {
+    try {
+      const json = await recentRes.json() as { data?: Record<string, Array<{ date: string; uptime: number }>> };
+      providers = Object.entries(json.data ?? {}).map(([providerId, series]) => ({
+        providerId,
+        series,
+      }));
+    } catch { /* ignore */ }
+  }
+
+  let uptimeGraphUrl: string | undefined;
+  let comparisonGraphUrl: string | undefined;
+  let finishReasonGraphUrl: string | undefined;
+  if (graphsRes?.ok) {
+    try {
+      const json = await graphsRes.json() as { data?: { overallGraphUrl?: string; comparisonGraphUrl?: string; finishReasonGraphUrl?: string } };
+      uptimeGraphUrl = json.data?.overallGraphUrl;
+      comparisonGraphUrl = json.data?.comparisonGraphUrl;
+      finishReasonGraphUrl = json.data?.finishReasonGraphUrl;
+    } catch { /* ignore */ }
+  }
+
+  return { providers, uptimeGraphUrl, comparisonGraphUrl, finishReasonGraphUrl };
+}
+
 // ─── Main transform ───────────────────────────────────────────────────────────
 
 export function transformModel(

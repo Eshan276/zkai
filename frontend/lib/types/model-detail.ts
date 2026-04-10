@@ -224,6 +224,68 @@ export interface ORBenchmarkData {
   eloBounds?: { min: number; max: number };
 }
 
+// ─── OpenRouter apps / activity / uptime types ───────────────────────────────
+
+/** One day of token-usage activity from the top-apps-chart endpoint */
+export interface ORActivityDay {
+  date: string;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  count: number;
+  total_tool_calls: number;
+}
+
+/** One app entry from the top-apps-for-model endpoint */
+export interface ORTopApp {
+  rank: number;
+  total_tokens: string;
+  total_requests: number;
+  app: {
+    id: number;
+    title: string;
+    description: string | null;
+    origin_url: string | null;
+    favicon_url: string | null;
+    categories: string[];
+  };
+}
+
+/**
+ * OpenRouter-sourced Apps + Activity data.
+ * Fetched from /api/frontend/stats/top-apps-for-model.
+ * Absent when the endpoint returns no data for this model.
+ */
+export interface ORAppsActivityData {
+  /** Model slug used to fetch this data */
+  slug: string;
+  /** Daily token usage series (prompt + completion) */
+  activitySeries: ORActivityDay[];
+  /** Top apps by token consumption */
+  topApps: ORTopApp[];
+}
+
+/** One provider's uptime series from uptime-recent */
+export interface ORUptimeProvider {
+  providerId: string;
+  series: Array<{ date: string; uptime: number }>;
+}
+
+/**
+ * OpenRouter-sourced Uptime data.
+ * Fetched from /api/frontend/stats/uptime-recent.
+ * Absent when the endpoint returns no data for this model.
+ */
+export interface ORUptimeData {
+  /** Model slug used to fetch this data */
+  slug: string;
+  /** Per-provider uptime series (last 3 days) */
+  providers: ORUptimeProvider[];
+  /** Datadog embed URLs for the live uptime graphs */
+  uptimeGraphUrl?: string;
+  comparisonGraphUrl?: string;
+  finishReasonGraphUrl?: string;
+}
+
 export interface ModelApiData {
   baseUrl: string;
   endpoints: Array<{
@@ -277,6 +339,16 @@ export interface ModelDetailViewModel {
    * Shown in the Benchmarks tab. Absent when both endpoints return empty data.
    */
   orBenchmarks?: ORBenchmarkData;
+  /**
+   * OpenRouter Apps + Activity data (top apps + daily token usage).
+   * Shown in the Apps and Activity tabs. Absent when the endpoint returns no data.
+   */
+  orAppsActivity?: ORAppsActivityData;
+  /**
+   * OpenRouter Uptime data (per-provider uptime series + Datadog graph URLs).
+   * Shown in the Uptime tab. Absent when the endpoint returns no data.
+   */
+  orUptime?: ORUptimeData;
   /** Flags indicating which sections contain real data vs empty state. */
   hasRealData: ModelDataAvailability;
 }

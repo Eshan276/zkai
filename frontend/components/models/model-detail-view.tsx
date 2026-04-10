@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Check,
   Copy,
   Cpu,
   HardDrive,
+  KeyRound,
   MemoryStick,
   Shield,
   Sparkles,
@@ -36,7 +37,7 @@ import {
 
 import { Navigation } from "@/components/navigation";
 import { cn } from "@/lib/utils";
-import type { ModelDetailViewModel, ORPerformanceStats, ORPerfPoint, ORBenchmarkData, ORAAbenchmarkEntry, ORDesignArenaRecord } from "@/lib/types/model-detail";
+import type { ModelDetailViewModel, ORPerformanceStats, ORPerfPoint, ORBenchmarkData, ORAAbenchmarkEntry, ORDesignArenaRecord, ORAppsActivityData, ORUptimeData } from "@/lib/types/model-detail";
 
 type SectionId = "pricing" | "providers" | "performance" | "benchmarks" | "apps" | "activity" | "uptime" | "api";
 
@@ -234,10 +235,6 @@ function ORPerformanceSection({ data }: { data: ORPerformanceStats }) {
     <div className="space-y-6">
       {summaryStats.length > 0 && <StatRow stats={summaryStats} />}
 
-      <p className="text-[11px] text-slate-600">
-        Source: OpenRouter · data shown is daily average across all providers
-      </p>
-
       <div className="grid gap-4 lg:grid-cols-2">
         <ORChart
           data={data.throughput}
@@ -277,6 +274,296 @@ function ORPerformanceSection({ data }: { data: ORPerformanceStats }) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── OpenRouter activity / apps section ──────────────────────────────────────
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return `${n}`;
+}
+
+function formatTokensFromString(s: string): string {
+  return formatTokenCount(parseInt(s, 10) || 0);
+}
+
+function ORActivitySection({ data }: { data: ORAppsActivityData }) {
+  const sorted = [...data.activitySeries].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+
+  const chartData = sorted.map((d) => ({
+    date: d.date.split(" ")[0].slice(5),
+    prompt: Math.round(d.total_prompt_tokens / 1_000_000),
+    completion: Math.round(d.total_completion_tokens / 1_000_000),
+    requests: d.count,
+  }));
+
+  const totalPrompt = sorted.reduce((s, d) => s + d.total_prompt_tokens, 0);
+  const totalCompletion = sorted.reduce((s, d) => s + d.total_completion_tokens, 0);
+  const totalRequests = sorted.reduce((s, d) => s + d.count, 0);
+
+  return (
+    <div className="space-y-8">
+      {/* Summary stats */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Prompt Tokens", value: formatTokenCount(totalPrompt) },
+          { label: "Completion Tokens", value: formatTokenCount(totalCompletion) },
+          { label: "Total Requests", value: formatNumber(totalRequests) },
+        ].map((s) => (
+          <div key={s.label} className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-4">
+            <p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">{s.label}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-white">{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Stacked bar chart — prompt vs completion tokens per day */}
+      {chartData.length > 0 && (
+        <div>
+          <p className="mb-3 text-xs text-slate-500">Daily token usage (millions)</p>
+          <div className="h-60">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v}M`} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(v, name) => [`${v}M tokens`, name === "prompt" ? "Prompt" : "Completion"]}
+                />
+                <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 11 }} formatter={(v) => v === "prompt" ? "Prompt" : "Completion"} />
+                <Bar dataKey="prompt" name="prompt" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="completion" name="completion" stackId="a" fill="#22d3ee" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Request count area chart */}
+      {chartData.length > 0 && (
+        <div>
+          <p className="mb-3 text-xs text-slate-500">Daily request count</p>
+          <div className="h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="reqGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} width={44} tickFormatter={(v) => formatNumber(v)} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(v) => [formatNumber(Number(v)), "Requests"]} />
+                <Area type="monotone" dataKey="requests" stroke="#a78bfa" fill="url(#reqGrad)" strokeWidth={2} dot={false} name="Requests" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ORAppsSection({ data }: { data: ORAppsActivityData }) {
+  if (data.topApps.length === 0) {
+    return <EmptyState message="No app usage data available for this model." />;
+  }
+
+  const maxTokens = parseInt(data.topApps[0]?.total_tokens ?? "1", 10) || 1;
+
+  return (
+    <div className="space-y-1">
+      {data.topApps.map((app, idx) => {
+        const tokens = parseInt(app.total_tokens, 10) || 0;
+        const barWidth = Math.max(1, (tokens / maxTokens) * 100);
+        const domain = app.app.origin_url
+          ? (() => { try { return new URL(app.app.origin_url).hostname.replace(/^www\./, ''); } catch { return null; } })()
+          : null;
+        const subtitle = app.app.description
+          ? app.app.description.length > 60
+            ? app.app.description.slice(0, 60) + "…"
+            : app.app.description
+          : domain;
+
+        return (
+          <div key={app.app.id} className="group py-3.5">
+            <div className="flex items-start gap-4">
+              {/* Rank */}
+              <span className="mt-0.5 w-4 shrink-0 text-[11px] font-medium text-slate-600 tabular-nums">
+                {idx + 1}.
+              </span>
+
+              {/* Title + subtitle */}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-white leading-snug">{app.app.title}</p>
+                {subtitle && (
+                  <p className="mt-0.5 text-[11px] text-slate-500 leading-snug">{subtitle}</p>
+                )}
+                {/* Token bar */}
+                <div className="mt-2 h-[3px] w-full rounded-full bg-white/[0.06]">
+                  <div
+                    className="h-[3px] rounded-full bg-gradient-to-r from-cyan-500 to-violet-500 transition-all"
+                    style={{ width: `${barWidth}%` }}
+                  />
+                </div>
+                <p className="mt-1.5 text-[10px] text-slate-600">
+                  {formatNumber(app.total_requests)} requests
+                  {app.app.categories.length > 0 && (
+                    <> · <span className="text-slate-500">{app.app.categories[0]}</span></>
+                  )}
+                </p>
+              </div>
+
+              {/* Token count */}
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-semibold text-white tabular-nums">{formatTokensFromString(app.total_tokens)}</p>
+                <p className="text-[10px] text-slate-600">tokens</p>
+              </div>
+            </div>
+
+            {/* Divider — skip after last */}
+            {idx < data.topApps.length - 1 && (
+              <div className="mt-3.5 h-px bg-white/[0.05]" />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── OpenRouter uptime section ────────────────────────────────────────────────
+
+function ORUptimeSection({ data }: { data: ORUptimeData }) {
+  // Build a unified date list across all providers
+  const allDates = Array.from(
+    new Set(data.providers.flatMap((p) => p.series.map((s) => s.date.split(" ")[0]))),
+  ).sort();
+
+  // Chart data: one row per date, one key per provider (shortened UUID)
+  const providerIds = data.providers.map((p) => p.providerId);
+  const chartData = allDates.map((date) => {
+    const row: Record<string, string | number> = { date: date.slice(5) };
+    for (const p of data.providers) {
+      const point = p.series.find((s) => s.date.startsWith(date));
+      row[p.providerId.slice(0, 8)] = point ? Number(point.uptime.toFixed(2)) : 0;
+    }
+    return row;
+  });
+
+  const UPTIME_COLORS = ["#22d3ee", "#a78bfa", "#34d399", "#fb7185", "#f59e0b"];
+
+  // Compute average uptime per provider
+  const providerAverages = data.providers.map((p) => {
+    const avg = p.series.length > 0
+      ? p.series.reduce((s, r) => s + r.uptime, 0) / p.series.length
+      : 0;
+    return { id: p.providerId, shortId: p.providerId.slice(0, 8), avg };
+  });
+
+  return (
+    <div className="space-y-8">
+      {/* Provider uptime averages */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {providerAverages.map((p, idx) => (
+          <div
+            key={p.id}
+            className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-4"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="h-2 w-2 rounded-full shrink-0"
+                style={{ backgroundColor: UPTIME_COLORS[idx % UPTIME_COLORS.length] }}
+              />
+              <p className="text-[10px] font-mono text-slate-500 truncate">{p.id.slice(0, 8)}…</p>
+            </div>
+            <p className="text-2xl font-semibold text-white">{p.avg.toFixed(2)}%</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">avg uptime</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Multi-line uptime chart */}
+      {chartData.length > 0 && (
+        <div>
+          <p className="mb-3 text-xs text-slate-500">Uptime by provider (%)</p>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
+                <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis
+                  domain={[98, 100]}
+                  tick={{ fill: "#64748b", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={44}
+                  tickFormatter={(v) => `${v}%`}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(v, name) => [`${v}%`, `Provider ${name}`]}
+                />
+                <Legend
+                  wrapperStyle={{ color: "#94a3b8", fontSize: 10 }}
+                  formatter={(v) => `Provider ${v}`}
+                />
+                {providerIds.map((id, idx) => (
+                  <Line
+                    key={id}
+                    type="monotone"
+                    dataKey={id.slice(0, 8)}
+                    stroke={UPTIME_COLORS[idx % UPTIME_COLORS.length]}
+                    strokeWidth={2}
+                    dot={{ r: 4, fill: UPTIME_COLORS[idx % UPTIME_COLORS.length] }}
+                    activeDot={{ r: 6 }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Datadog live graph embeds — dark background so the iframe doesn't flash white */}
+      {data.uptimeGraphUrl && (
+        <div>
+          <p className="mb-3 text-xs text-slate-500">Live uptime</p>
+          <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0e14]">
+            <iframe
+              src={data.uptimeGraphUrl}
+              className="h-72 w-full"
+              title="Uptime graph"
+              loading="lazy"
+              style={{ colorScheme: "dark" }}
+            />
+          </div>
+        </div>
+      )}
+
+      {data.finishReasonGraphUrl && (
+        <div>
+          <p className="mb-3 text-xs text-slate-500">Successful inference finish reasons</p>
+          <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0e14]">
+            <iframe
+              src={data.finishReasonGraphUrl}
+              className="h-72 w-full"
+              title="Finish reason graph"
+              loading="lazy"
+              style={{ colorScheme: "dark" }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -458,10 +745,6 @@ function DesignArenaSection({
 function ORBenchmarksSection({ data }: { data: ORBenchmarkData }) {
   return (
     <div className="space-y-8">
-      <p className="text-[11px] text-slate-600">
-        Source: OpenRouter · Artificial Analysis &amp; Design Arena · data is model-specific and updated periodically
-      </p>
-
       {data.aaBenchmarks.length > 0 && (
         <div className="space-y-4">
           <p className="text-xs font-medium uppercase tracking-[0.1em] text-slate-500">
@@ -483,6 +766,18 @@ function ORBenchmarksSection({ data }: { data: ORBenchmarkData }) {
 export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
   const [copied, setCopied] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("pricing");
+  const [copiedApiSnippet, setCopiedApiSnippet] = useState(false);
+
+  const hasBenchmarkData = Boolean(model.orBenchmarks);
+
+  const visibleSectionItems = useMemo(
+    () => (hasBenchmarkData ? sectionItems : sectionItems.filter((s) => s.id !== "benchmarks")),
+    [hasBenchmarkData],
+  );
+
+  /** When benchmarks are unavailable, map a stale "benchmarks" selection to pricing for display. */
+  const displayActiveSection: SectionId =
+    !hasBenchmarkData && activeSection === "benchmarks" ? "pricing" : activeSection;
 
   const copySlug = async () => {
     try {
@@ -491,6 +786,43 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
       setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);
+    }
+  };
+
+  const apiTabModelName = model.hero.name.replace(/7b/gi, "1.5b");
+
+  const apiCurlSnippet = useMemo(() => {
+    const trimmedBaseUrl = model.api.baseUrl.replace(/\/$/, "");
+    const chatCompletionsUrl = `${trimmedBaseUrl}/chat/completions`;
+
+    const reasoningBlock = model.hero.supportsReasoning
+      ? `,
+    "reasoning": {
+      "enabled": true
+    }`
+      : "";
+
+    return `curl ${chatCompletionsUrl} \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer $ZKAI_API_KEY" \\
+  -d '{
+    "model": "${model.hero.slug}",
+    "messages": [
+      {
+        "role": "user",
+        "content": "How many r's are in the word strawberry?"
+      }
+    ]${reasoningBlock}
+  }'`;
+  }, [model.api.baseUrl, model.hero.slug, model.hero.supportsReasoning]);
+
+  const copyApiSnippet = async () => {
+    try {
+      await navigator.clipboard.writeText(apiCurlSnippet);
+      setCopiedApiSnippet(true);
+      setTimeout(() => setCopiedApiSnippet(false), 1500);
+    } catch {
+      setCopiedApiSnippet(false);
     }
   };
 
@@ -596,15 +928,15 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
       {/* ── Tab Nav ───────────────────────────────────────────── */}
       <div className="sticky top-[72px] z-30 -mx-4 bg-transparent sm:-mx-6">
         <div className="mx-auto flex max-w-4xl gap-0 overflow-x-auto px-4 sm:px-6">
-          {sectionItems.map((item) => (
+          {visibleSectionItems.map((item) => (
             <button
               type="button"
               key={item.id}
               onClick={() => setActiveSection(item.id)}
-              aria-pressed={activeSection === item.id}
+              aria-pressed={displayActiveSection === item.id}
               className={cn(
                 "shrink-0 border-b-2 px-4 py-3.5 text-sm font-medium transition-colors",
-                activeSection === item.id
+                displayActiveSection === item.id
                   ? "border-teal-400 text-white"
                   : "border-transparent text-slate-500 hover:text-slate-300",
               )}
@@ -616,10 +948,10 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
       </div>
 
       {/* ── Sections ─────────────────────────────────────────── */}
-      <div className="divide-y divide-white/[0.07]">
+      <div className="divide-y divide-white/[0.07] [&>section:last-of-type]:border-b-0">
 
         {/* ── Pricing ── */}
-        <section className={cn("py-10", activeSection === "pricing" ? "block" : "hidden")}>
+        <section className={cn("py-10", displayActiveSection === "pricing" ? "block" : "hidden")}>
           <SectionHeading title="Pricing" live={model.hasRealData.price} />
 
           {model.price ? (
@@ -721,7 +1053,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
         </section>
 
         {/* ── Providers ── */}
-        <section className={cn("py-10", activeSection === "providers" ? "block" : "hidden")}>
+        <section className={cn("py-10", displayActiveSection === "providers" ? "block" : "hidden")}>
           <SectionHeading title="Providers" live={model.hasRealData.providers} />
 
           {model.providers ? (
@@ -888,7 +1220,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
         </section>
 
         {/* ── Performance ── */}
-        <section className={cn("py-10", activeSection === "performance" ? "block" : "hidden")}>
+        <section className={cn("py-10", displayActiveSection === "performance" ? "block" : "hidden")}>
           <SectionHeading title="Performance" live={model.hasRealData.performance} />
 
           {model.orPerformance ? (
@@ -962,15 +1294,12 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           ── end zkAI internal performance ── */}
         </section>
 
-        {/* ── Benchmarks ── */}
-        <section className={cn("py-10", activeSection === "benchmarks" ? "block" : "hidden")}>
+        {/* ── Benchmarks (tab + section only when OpenRouter returned benchmark data) ── */}
+        {model.orBenchmarks && (
+        <section className={cn("py-10", displayActiveSection === "benchmarks" ? "block" : "hidden")}>
           <SectionHeading title="Benchmarks" live={false} />
 
-          {model.orBenchmarks ? (
-            <ORBenchmarksSection data={model.orBenchmarks} />
-          ) : (
-            <EmptyState message="No benchmark data available for this model." />
-          )}
+          <ORBenchmarksSection data={model.orBenchmarks} />
 
           {/* ── zkAI / Artificial Analysis radar (commented out until we have our own benchmark endpoint) ──
           {model.performance && model.performance.benchmarkRadar && model.performance.benchmarkRadar.length > 0 ? (
@@ -993,11 +1322,19 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           )}
           ── end zkAI benchmark radar ── */}
         </section>
+        )}
 
         {/* ── Apps ── */}
-        <section className={cn("py-10", activeSection === "apps" ? "block" : "hidden")}>
-          <SectionHeading title="Apps" live={model.hasRealData.apps} />
+        <section className={cn("py-10", displayActiveSection === "apps" ? "block" : "hidden")}>
+          <SectionHeading title="Apps" live={false} />
 
+          {model.orAppsActivity ? (
+            <ORAppsSection data={model.orAppsActivity} />
+          ) : (
+            <EmptyState message="No app usage data available for this model." />
+          )}
+
+          {/* ── zkAI internal apps data (commented out until we have our own apps endpoint) ──
           {model.hasRealData.apps && model.apps ? (
             <div className="grid gap-6 lg:grid-cols-2">
               <div>
@@ -1023,7 +1360,6 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                   </ResponsiveContainer>
                 </div>
               </div>
-
               <div>
                 <p className="mb-3 text-xs text-slate-500">Top apps</p>
                 <div className="divide-y divide-white/6">
@@ -1045,12 +1381,20 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           ) : (
             <EmptyState message="No app-level data available yet." />
           )}
+          ── end zkAI internal apps ── */}
         </section>
 
         {/* ── Activity ── */}
-        <section className={cn("py-10", activeSection === "activity" ? "block" : "hidden")}>
-          <SectionHeading title="Activity" live={model.hasRealData.activity} />
+        <section className={cn("py-10", displayActiveSection === "activity" ? "block" : "hidden")}>
+          <SectionHeading title="Activity" live={false} />
 
+          {model.orAppsActivity ? (
+            <ORActivitySection data={model.orAppsActivity} />
+          ) : (
+            <EmptyState message="No activity data available for this model." />
+          )}
+
+          {/* ── zkAI internal activity data (commented out until we have our own activity endpoint) ──
           {model.activity && model.hasRealData.activity ? (
             <>
               <StatRow
@@ -1069,7 +1413,6 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                   },
                 ]}
               />
-
               <div className="mt-8 grid gap-6 lg:grid-cols-2">
                 <div>
                   <p className="mb-3 text-xs text-slate-500">Hourly request trend</p>
@@ -1088,7 +1431,6 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                     </ResponsiveContainer>
                   </div>
                 </div>
-
                 <div>
                   <p className="mb-3 text-xs text-slate-500">Operation mix</p>
                   <div className="h-52">
@@ -1117,12 +1459,20 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           ) : (
             <EmptyState message="No activity data yet. Data appears once requests are routed through zkAI." />
           )}
+          ── end zkAI internal activity ── */}
         </section>
 
         {/* ── Uptime ── */}
-        <section className={cn("py-10", activeSection === "uptime" ? "block" : "hidden")}>
-          <SectionHeading title="Uptime" live={model.hasRealData.uptime} />
+        <section className={cn("py-10", displayActiveSection === "uptime" ? "block" : "hidden")}>
+          <SectionHeading title="Uptime" live={false} />
 
+          {model.orUptime ? (
+            <ORUptimeSection data={model.orUptime} />
+          ) : (
+            <EmptyState message="No uptime data available for this model." />
+          )}
+
+          {/* ── zkAI internal uptime data (commented out until we have our own uptime endpoint) ──
           {model.uptime && model.hasRealData.uptime ? (
             <>
               <StatRow
@@ -1136,10 +1486,9 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                       model.uptime.regions && model.uptime.regions.length > 0
                         ? `${Math.round(model.uptime.regions.reduce((s, r) => s + r.latencyMs, 0) / model.uptime.regions.length)} ms`
                         : "—",
-                  },
+                    },
                 ]}
               />
-
               <div className="mt-8 grid gap-6 lg:grid-cols-2">
                 <div>
                   <p className="mb-3 text-xs text-slate-500">24-hour uptime timeline</p>
@@ -1158,7 +1507,6 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                     </ResponsiveContainer>
                   </div>
                 </div>
-
                 <div>
                   <p className="mb-3 text-xs text-slate-500">Regional reliability</p>
                   {model.uptime.regions && model.uptime.regions.length > 0 ? (
@@ -1182,71 +1530,62 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           ) : (
             <EmptyState message="No uptime data yet. Data appears once requests are routed through zkAI providers." />
           )}
+          ── end zkAI internal uptime ── */}
         </section>
 
         {/* ── API ── */}
-        <section className={cn("py-10", activeSection === "api" ? "block" : "hidden")}>
+        <section className={cn("py-10", displayActiveSection === "api" ? "block" : "hidden")}>
           <SectionHeading title="API" />
 
-          <div className="grid gap-8 lg:grid-cols-2">
-            <div className="space-y-6">
-              {/* Base URL */}
-              <div>
-                <p className="mb-1 text-[11px] uppercase tracking-[0.1em] text-slate-500">Base URL</p>
-                <p className="font-mono text-sm text-teal-300">{model.api.baseUrl}</p>
-              </div>
-
-              {/* Endpoints */}
-              <div>
-                <p className="mb-2 text-[11px] uppercase tracking-[0.1em] text-slate-500">Endpoints</p>
-                <div className="divide-y divide-white/6">
-                  {model.api.endpoints.map((endpoint) => (
-                    <div key={endpoint.path} className="py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "text-[11px] font-semibold",
-                            endpoint.method === "POST" ? "text-cyan-400" : "text-emerald-400",
-                          )}
-                        >
-                          {endpoint.method}
-                        </span>
-                        <span className="font-mono text-sm text-white">{endpoint.path}</span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-500">{endpoint.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Model ID */}
-              <div>
-                <p className="mb-1 text-[11px] uppercase tracking-[0.1em] text-slate-500">Model ID</p>
-                <div className="flex items-center gap-2">
-                  <code className="font-mono text-sm text-teal-300">{model.hero.slug}</code>
-                  <button
-                    onClick={copySlug}
-                    className="text-slate-500 transition hover:text-slate-300"
-                  >
-                    {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-              </div>
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <h3 className="text-3xl font-semibold tracking-tight text-white">
+                Sample code and API for {apiTabModelName}
+              </h3>
+              <p className="text-lg text-slate-400">
+                zkAI normalizes requests and responses across providers for you.
+              </p>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-[#001018] shadow-[0_8px_24px_rgba(6,182,212,0.3)] transition hover:bg-cyan-400"
+              >
+                <KeyRound className="h-4 w-4" />
+                Create API key
+              </button>
             </div>
 
-            <div className="space-y-5">
-              <div>
-                <p className="mb-2 text-[11px] uppercase tracking-[0.1em] text-slate-500">Sample Request</p>
-                <pre className="overflow-x-auto rounded border border-white/8 bg-white/[0.03] p-4 text-xs leading-relaxed text-slate-300">
-                  <code>{model.api.sampleRequest}</code>
-                </pre>
+            <div className="space-y-4 text-[17px] leading-8 text-slate-300">
+              <p>
+                zkAI supports reasoning-enabled models that can show their step-by-step thinking process. Use
+                the <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-sm text-slate-100">reasoning</code>{" "}
+                parameter in your request to enable reasoning, and access the{" "}
+                <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-sm text-slate-100">reasoning_details</code>{" "}
+                array in the response.
+              </p>
+              <p>
+                In the example below, provider-specific headers are optional and can be added based on your app
+                analytics needs.
+              </p>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b1018]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
+                <span className="rounded-md border border-slate-300/40 bg-slate-100/10 px-2.5 py-0.5 text-xs text-slate-100">
+                  curl
+                </span>
+                <button
+                  type="button"
+                  onClick={copyApiSnippet}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.12] px-2.5 py-1 text-xs text-slate-300 transition hover:bg-white/[0.06]"
+                >
+                  {copiedApiSnippet ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedApiSnippet ? "Copied" : "Copy"}
+                </button>
               </div>
-              <div>
-                <p className="mb-2 text-[11px] uppercase tracking-[0.1em] text-slate-500">Sample Response</p>
-                <pre className="overflow-x-auto rounded border border-white/8 bg-white/[0.03] p-4 text-xs leading-relaxed text-slate-300">
-                  <code>{model.api.sampleResponse}</code>
-                </pre>
-              </div>
+
+              <pre className="overflow-x-auto px-4 py-4 text-sm leading-relaxed text-slate-200">
+                <code>{apiCurlSnippet}</code>
+              </pre>
             </div>
           </div>
         </section>
