@@ -5,6 +5,8 @@ import {
   fetchProvidersForModel,
   fetchHourlyJobStats,
   fetchJobPerformanceStats,
+  fetchORPerformanceStats,
+  resolveORPermaslug,
   matchAAModel,
   deriveCategory,
   deriveModalities,
@@ -35,10 +37,13 @@ export async function GET(
       return NextResponse.json({ error: 'Model not found' }, { status: 404 });
     }
 
-    const [dbProviders, hourlyStats, jobPerfStats] = await Promise.all([
+    const permaslug = resolveORPermaslug(slug, orModels);
+
+    const [dbProviders, hourlyStats, jobPerfStats, orPerfStats] = await Promise.all([
       fetchProvidersForModel(slug),
       fetchHourlyJobStats(slug),
       fetchJobPerformanceStats(slug),
+      fetchORPerformanceStats(permaslug),
     ]);
 
     const aaModel = matchAAModel(aaModels, orModel);
@@ -336,6 +341,11 @@ export async function GET(
 
     // ─── Compose final view model ─────────────────────────────────────────────
 
+    const hasORPerf =
+      orPerfStats.throughput.length > 0 ||
+      orPerfStats.latency.length > 0 ||
+      orPerfStats.latencyE2e.length > 0;
+
     const viewModel: ModelDetailViewModel = {
       hero,
       price,
@@ -344,6 +354,16 @@ export async function GET(
       performance,
       activity,
       api,
+      ...(hasORPerf && {
+        orPerformance: {
+          permaslug: orPerfStats.permaslug,
+          throughput: orPerfStats.throughput,
+          latency: orPerfStats.latency,
+          latencyE2e: orPerfStats.latencyE2e,
+          toolCallErrorRate: orPerfStats.toolCallErrorRate,
+          structuredOutputErrorRate: orPerfStats.structuredOutputErrorRate,
+        },
+      }),
       hasRealData: {
         price: true,
         activity: hasActivity,

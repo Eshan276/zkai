@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Check,
   Copy,
@@ -34,15 +34,18 @@ import {
   YAxis,
 } from "recharts";
 
+import { Navigation } from "@/components/navigation";
 import { cn } from "@/lib/utils";
-import type { ModelDetailViewModel } from "@/lib/types/model-detail";
+import type { ModelDetailViewModel, ORPerformanceStats, ORPerfPoint } from "@/lib/types/model-detail";
 
-type SectionId = "overview" | "providers" | "performance" | "activity" | "uptime" | "api";
+type SectionId = "pricing" | "providers" | "performance" | "benchmarks" | "apps" | "activity" | "uptime" | "api";
 
 const sectionItems: { id: SectionId; label: string }[] = [
-  { id: "overview", label: "Overview" },
+  { id: "pricing", label: "Pricing" },
   { id: "providers", label: "Providers" },
   { id: "performance", label: "Performance" },
+  { id: "benchmarks", label: "Benchmarks" },
+  { id: "apps", label: "Apps" },
   { id: "activity", label: "Activity" },
   { id: "uptime", label: "Uptime" },
   { id: "api", label: "API" },
@@ -73,6 +76,35 @@ function formatUsd(value: number): string {
   if (value < 0.01) return `$${value.toFixed(4)}`;
   if (value < 1) return `$${value.toFixed(2)}`;
   return `$${value.toFixed(2)}`;
+}
+
+function buildPricingTrend(
+  trend: Array<{ day: string; input: number; output: number; effective: number }>,
+  inputPerM: number,
+  outputPerM: number,
+  effectivePerM: number,
+) {
+  if (trend.length > 0) {
+    return trend.slice(-7).map((point, idx) => ({
+      day: point.day || `Day ${idx + 1}`,
+      input: point.input,
+      output: point.output,
+      effective: point.effective,
+    }));
+  }
+
+  const days = Array.from({ length: 7 }, (_, idx) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - idx));
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  });
+
+  return days.map((day) => ({
+    day,
+    input: inputPerM,
+    output: outputPerM,
+    effective: effectivePerM,
+  }));
 }
 
 function SectionHeading({ title, live }: { title: string; live?: boolean }) {
@@ -112,32 +144,146 @@ function StatRow({ stats }: { stats: { label: string; value: string }[] }) {
   );
 }
 
+// ─── OpenRouter performance helpers ──────────────────────────────────────────
+
+/**
+ * Flatten OR time-series data into chart-friendly rows.
+ * Each point has `x` (date string) and `y` (map of endpointId → value).
+ * We merge all endpoint values into a single average per date for simplicity.
+ */
+function flattenORSeries(points: ORPerfPoint[]): Array<{ date: string; value: number }> {
+  return points.map((p) => {
+    const vals = Object.values(p.y);
+    const avg = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+    return {
+      date: p.x.split(' ')[0],
+      value: Number(avg.toFixed(2)),
+    };
+  });
+}
+
+function ORChart({
+  data,
+  label,
+  color,
+  unit,
+  formatter,
+}: {
+  data: ORPerfPoint[];
+  label: string;
+  color: string;
+  unit?: string;
+  formatter?: (v: number) => string;
+}) {
+  const series = flattenORSeries(data);
+  if (series.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+      <p className="mb-3 text-sm text-slate-400">{label}</p>
+      <div className="h-52">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={series} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
+            <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis
+              tick={{ fill: "#64748b", fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+              width={44}
+              tickFormatter={formatter}
+            />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              formatter={(v) => {
+                const n = typeof v === 'number' ? v : Number(v);
+                return [formatter ? formatter(n) : `${n}${unit ? ` ${unit}` : ''}`, label];
+              }}
+            />
+            <Line type="monotone" dataKey="value" name={label} stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function latestAvg(points: ORPerfPoint[]): number | null {
+  if (points.length === 0) return null;
+  const last = points[points.length - 1];
+  const vals = Object.values(last.y);
+  if (vals.length === 0) return null;
+  return vals.reduce((s, v) => s + v, 0) / vals.length;
+}
+
+function ORPerformanceSection({ data }: { data: ORPerformanceStats }) {
+  const avgThroughput = latestAvg(data.throughput);
+  const avgLatency = latestAvg(data.latency);
+  const avgE2eLatency = latestAvg(data.latencyE2e);
+  const avgToolErr = latestAvg(data.toolCallErrorRate);
+  const avgStructErr = latestAvg(data.structuredOutputErrorRate);
+
+  const summaryStats = [
+    avgThroughput != null && { label: "Throughput", value: `${avgThroughput.toFixed(0)} tok/s` },
+    avgLatency != null && { label: "TTFT (avg)", value: `${(avgLatency / 1000).toFixed(2)} s` },
+    avgE2eLatency != null && { label: "E2E Latency", value: `${(avgE2eLatency / 1000).toFixed(2)} s` },
+    avgToolErr != null && { label: "Tool Call Err", value: `${avgToolErr.toFixed(2)}%` },
+    avgStructErr != null && { label: "Struct. Output Err", value: `${avgStructErr.toFixed(2)}%` },
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className="space-y-6">
+      {summaryStats.length > 0 && <StatRow stats={summaryStats} />}
+
+      <p className="text-[11px] text-slate-600">
+        Source: OpenRouter · data shown is daily average across all providers
+      </p>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ORChart
+          data={data.throughput}
+          label="Throughput (tok/s)"
+          color="#2dd4bf"
+          unit="tok/s"
+          formatter={(v) => `${v.toFixed(0)}`}
+        />
+        <ORChart
+          data={data.latency}
+          label="TTFT Latency (ms)"
+          color="#22d3ee"
+          unit="ms"
+          formatter={(v) => `${v.toFixed(0)}`}
+        />
+        <ORChart
+          data={data.latencyE2e}
+          label="E2E Latency (ms)"
+          color="#a78bfa"
+          unit="ms"
+          formatter={(v) => `${v.toFixed(0)}`}
+        />
+        <ORChart
+          data={data.toolCallErrorRate}
+          label="Tool Call Error Rate (%)"
+          color="#fb7185"
+          unit="%"
+          formatter={(v) => `${v.toFixed(2)}%`}
+        />
+        {data.structuredOutputErrorRate.length > 0 && (
+          <ORChart
+            data={data.structuredOutputErrorRate}
+            label="Structured Output Error Rate (%)"
+            color="#f59e0b"
+            unit="%"
+            formatter={(v) => `${v.toFixed(2)}%`}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
   const [copied, setCopied] = useState(false);
-  const [activeSection, setActiveSection] = useState<SectionId>("overview");
-
-  useEffect(() => {
-    const nodes = sectionItems
-      .map((item) => document.getElementById(item.id))
-      .filter((node): node is HTMLElement => Boolean(node));
-
-    if (nodes.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible.length > 0) {
-          setActiveSection(visible[0].target.id as SectionId);
-        }
-      },
-      { rootMargin: "-40% 0px -45% 0px", threshold: [0.05, 0.2, 0.35] },
-    );
-
-    nodes.forEach((node) => observer.observe(node));
-    return () => observer.disconnect();
-  }, []);
+  const [activeSection, setActiveSection] = useState<SectionId>("pricing");
 
   const copySlug = async () => {
     try {
@@ -149,8 +295,42 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
     }
   };
 
+  const pricingTrend = model.price
+    ? buildPricingTrend(
+        model.price.trend,
+        model.price.inputPerM,
+        model.price.outputPerM,
+        model.price.effectivePerM,
+      )
+    : [];
+
+  const shareByProvider = new Map(
+    (model.providers?.distribution ?? []).map((row) => [row.provider, row.share]),
+  );
+
+  const providerRows =
+    model.providers?.zkaiProviders && model.providers.zkaiProviders.length > 0
+      ? model.providers.zkaiProviders.map((provider) => ({
+          provider: provider.id,
+          inputPerM: model.price?.inputPerM ?? 0,
+          outputPerM: model.price?.outputPerM ?? 0,
+          share: shareByProvider.get(provider.id),
+        }))
+      : model.price
+        ? [
+            {
+              provider: "Default route",
+              inputPerM: model.price.inputPerM,
+              outputPerM: model.price.outputPerM,
+              share: 100,
+            },
+          ]
+        : [];
+
   return (
-    <div className="relative mx-auto w-full max-w-4xl px-4 pb-24 pt-28 sm:px-6">
+    <>
+      <Navigation />
+      <div className="relative mx-auto w-full max-w-4xl px-4 pb-24 pt-28 sm:px-6">
 
       {/* ── Hero ──────────────────────────────────────────────── */}
       <section className="pb-10">
@@ -212,22 +392,17 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           ))}
         </div>
 
-        {/* zkAI provider notice */}
-        {model.hero.zkaiProvider && (
-          <div className="mt-5 inline-flex items-center gap-2 rounded-lg border border-teal-400/20 bg-teal-400/[0.06] px-3 py-2 text-sm text-teal-300">
-            <Shield className="h-3.5 w-3.5 shrink-0" />
-            <span>zkAI Provider available — {model.hero.zkaiProvider.endpoint}</span>
-          </div>
-        )}
       </section>
 
       {/* ── Tab Nav ───────────────────────────────────────────── */}
-      <div className="sticky top-[72px] z-30 -mx-4 border-b border-white/[0.07] bg-black/80 backdrop-blur-md sm:-mx-6">
+      <div className="sticky top-[72px] z-30 -mx-4 bg-transparent sm:-mx-6">
         <div className="mx-auto flex max-w-4xl gap-0 overflow-x-auto px-4 sm:px-6">
           {sectionItems.map((item) => (
-            <a
+            <button
+              type="button"
               key={item.id}
-              href={`#${item.id}`}
+              onClick={() => setActiveSection(item.id)}
+              aria-pressed={activeSection === item.id}
               className={cn(
                 "shrink-0 border-b-2 px-4 py-3.5 text-sm font-medium transition-colors",
                 activeSection === item.id
@@ -236,7 +411,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
               )}
             >
               {item.label}
-            </a>
+            </button>
           ))}
         </div>
       </div>
@@ -244,93 +419,110 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
       {/* ── Sections ─────────────────────────────────────────── */}
       <div className="divide-y divide-white/[0.07]">
 
-        {/* ── Overview / Pricing ── */}
-        <section id="overview" data-section="overview" className="scroll-mt-40 py-10">
-          <SectionHeading title="Overview & Pricing" live={model.hasRealData.price} />
+        {/* ── Pricing ── */}
+        <section className={cn("py-10", activeSection === "pricing" ? "block" : "hidden")}>
+          <SectionHeading title="Pricing" live={model.hasRealData.price} />
 
           {model.price ? (
-            <>
-              {/* zkAI provider notice */}
-              {model.hero.zkaiProvider && (
-                <div className="mb-6 flex items-start gap-2 text-sm text-teal-300">
-                  <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <div>
-                    <span className="font-medium">zkAI Provider</span>
-                    <span className="ml-2 text-teal-400/70">{model.hero.zkaiProvider.endpoint}</span>
-                    <span className="ml-3 text-teal-400/60">${model.hero.zkaiProvider.price.toFixed(4)}/req · rep {model.hero.zkaiProvider.reputation.toFixed(2)}</span>
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-6">
+                <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
+                  Effective Pricing For {model.hero.name}
+                </h3>
+                <p className="mt-2 text-sm text-slate-400">
+                  Estimated cost per million tokens across active routes over the past 7 days.
+                </p>
+
+                <div className="mt-6">
+                  <p className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
+                    Weighted Average
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3.5">
+                      <p className="text-sm text-slate-400">Weighted Avg Input Price</p>
+                      <p className="mt-1 text-4xl font-semibold tracking-tight text-white">
+                        {formatUsd(model.price.inputPerM)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">per 1M tokens</p>
+                    </div>
+                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3.5">
+                      <p className="text-sm text-slate-400">Weighted Avg Output Price</p>
+                      <p className="mt-1 text-4xl font-semibold tracking-tight text-white">
+                        {formatUsd(model.price.outputPerM)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">per 1M tokens</p>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {/* Pricing stats row */}
-              <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {[
-                  { label: "Input / 1M", value: formatUsd(model.price.inputPerM) },
-                  { label: "Output / 1M", value: formatUsd(model.price.outputPerM) },
-                  { label: "Effective / 1M", value: formatUsd(model.price.effectivePerM) },
-                  { label: "Discount", value: `${model.price.discountPercent}%` },
-                ].map((s) => (
-                  <div key={s.label} className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-3.5">
-                    <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">{s.label}</p>
-                    <p className="mt-1.5 text-2xl font-semibold tracking-tight text-white">{s.value}</p>
+                <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.08]">
+                  <div className="grid grid-cols-[minmax(140px,1.6fr)_1fr_1fr_0.9fr] gap-3 border-b border-white/[0.08] bg-white/[0.02] px-4 py-2.5 text-xs uppercase tracking-[0.08em] text-slate-500">
+                    <span>Provider</span>
+                    <span className="text-right">Input $/1M</span>
+                    <span className="text-right">Output $/1M</span>
+                    <span className="text-right">Traffic</span>
                   </div>
-                ))}
+                  <div className="divide-y divide-white/[0.06]">
+                    {providerRows.map((row) => (
+                      <div
+                        key={row.provider}
+                        className="grid grid-cols-[minmax(140px,1.6fr)_1fr_1fr_0.9fr] gap-3 px-4 py-3 text-sm"
+                      >
+                        <p className="truncate text-white">{row.provider}</p>
+                        <p className="text-right text-slate-200">{formatUsd(row.inputPerM)}</p>
+                        <p className="text-right text-slate-200">{formatUsd(row.outputPerM)}</p>
+                        <p className="text-right text-slate-400">
+                          {typeof row.share === "number" ? `${row.share.toFixed(1)}%` : "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Provider rows use current model-level token rates while traffic share comes from observed routing distribution.
+                </p>
               </div>
 
-              {/* Charts */}
-              <div className="grid gap-6 lg:grid-cols-2">
-                <div>
-                  <p className="mb-3 text-xs text-slate-500">14-day pricing trend</p>
-                  <div className="h-56">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+                  <p className="mb-3 text-sm text-slate-400">Input Price / 1M tokens (7 days)</p>
+                  <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={model.price.trend} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="priceInput" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#5eead4" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="#5eead4" stopOpacity={0} />
-                          </linearGradient>
-                          <linearGradient id="priceOutput" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#fb7185" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="#fb7185" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
+                      <LineChart data={pricingTrend} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
                         <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} width={44} />
+                        <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} width={42} />
                         <Tooltip contentStyle={tooltipStyle} />
-                        <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 11 }} />
-                        <Area type="monotone" dataKey="input" name="Input" stroke="#5eead4" fill="url(#priceInput)" strokeWidth={1.5} />
-                        <Area type="monotone" dataKey="output" name="Output" stroke="#fb7185" fill="url(#priceOutput)" strokeWidth={1.5} />
-                        <Line type="monotone" dataKey="effective" name="Effective" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
-                      </AreaChart>
+                        <Line type="monotone" dataKey="input" name="Input" stroke="#22d3ee" strokeWidth={2} dot={false} />
+                      </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                <div>
-                  <p className="mb-3 text-xs text-slate-500">Routing tier mix</p>
-                  <div className="h-56">
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+                  <p className="mb-3 text-sm text-slate-400">Output Price / 1M tokens (7 days)</p>
+                  <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={model.price.tiers} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <LineChart data={pricingTrend} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-                        <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
+                        <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} width={42} />
                         <Tooltip contentStyle={tooltipStyle} />
-                        <Bar dataKey="requestsShare" name="Requests %" fill="#22d3ee" radius={[3, 3, 0, 0]} />
-                        <Bar dataKey="costPer1k" name="Cost/1k" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-                      </BarChart>
+                        <Line type="monotone" dataKey="output" name="Output" stroke="#2dd4bf" strokeWidth={2} dot={false} />
+                      </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           ) : (
             <EmptyState message="Pricing data unavailable for this model." />
           )}
         </section>
 
         {/* ── Providers ── */}
-        <section id="providers" data-section="providers" className="scroll-mt-40 py-10">
+        <section className={cn("py-10", activeSection === "providers" ? "block" : "hidden")}>
           <SectionHeading title="Providers" live={model.hasRealData.providers} />
 
           {model.providers ? (
@@ -497,9 +689,17 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
         </section>
 
         {/* ── Performance ── */}
-        <section id="performance" data-section="performance" className="scroll-mt-40 py-10">
+        <section className={cn("py-10", activeSection === "performance" ? "block" : "hidden")}>
           <SectionHeading title="Performance" live={model.hasRealData.performance} />
 
+          {model.orPerformance ? (
+            <ORPerformanceSection data={model.orPerformance} />
+          ) : (
+            /* TODO: replace with our own telemetry endpoint when available */
+            <EmptyState message="No performance data recorded for this model yet." />
+          )}
+
+          {/* ── zkAI internal performance (commented out until our telemetry endpoint is ready) ──
           {model.performance ? (
             <>
               <StatRow
@@ -511,7 +711,6 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                 ]}
               />
 
-              {/* Real telemetry from jobs: CPU + RAM */}
               {(model.performance.avgCpuPercent != null || model.performance.avgRamMb != null) && (
                 <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {model.performance.avgCpuPercent != null && (
@@ -541,51 +740,108 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                 </div>
               )}
 
-              <div className="mt-8 grid gap-6 lg:grid-cols-2">
-                <div>
-                  <p className="mb-3 text-xs text-slate-500">Latency under load</p>
-                  <div className="h-52">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={model.performance.latencySeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-                        <XAxis dataKey="bucket" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip contentStyle={tooltipStyle} />
-                        <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 11 }} />
-                        <Line type="monotone" dataKey="p50" name="P50" stroke="#2dd4bf" strokeWidth={1.5} dot={false} />
-                        <Line type="monotone" dataKey="p95" name="P95" stroke="#fb7185" strokeWidth={1.5} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-3 text-xs text-slate-500">Capability radar</p>
-                  {model.performance.benchmarkRadar && model.performance.benchmarkRadar.length > 0 ? (
-                    <div className="h-52">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <RadarChart data={model.performance.benchmarkRadar}>
-                          <PolarGrid stroke="rgba(148,163,184,0.12)" />
-                          <PolarAngleAxis dataKey="metric" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                          <PolarRadiusAxis domain={[40, 100]} tick={{ fill: "#64748b", fontSize: 9 }} />
-                          <Radar dataKey="score" stroke="#22d3ee" fill="#22d3ee" fillOpacity={0.25} />
-                          <Tooltip contentStyle={tooltipStyle} />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : (
-                    <EmptyState message="No benchmark data available." />
-                  )}
+              <div className="mt-8">
+                <p className="mb-3 text-xs text-slate-500">Latency under load</p>
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={model.performance.latencySeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
+                      <XAxis dataKey="bucket" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 11 }} />
+                      <Line type="monotone" dataKey="p50" name="P50" stroke="#2dd4bf" strokeWidth={1.5} dot={false} />
+                      <Line type="monotone" dataKey="p95" name="P95" stroke="#fb7185" strokeWidth={1.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
             </>
           ) : (
             <EmptyState message="No performance data recorded for this model yet." />
           )}
+          ── end zkAI internal performance ── */}
+        </section>
+
+        {/* ── Benchmarks ── */}
+        <section className={cn("py-10", activeSection === "benchmarks" ? "block" : "hidden")}>
+          <SectionHeading title="Benchmarks" live={model.hasRealData.performance} />
+
+          {model.performance && model.performance.benchmarkRadar && model.performance.benchmarkRadar.length > 0 ? (
+            <div>
+              <p className="mb-3 text-xs text-slate-500">Capability radar</p>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={model.performance.benchmarkRadar}>
+                    <PolarGrid stroke="rgba(148,163,184,0.12)" />
+                    <PolarAngleAxis dataKey="metric" tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                    <PolarRadiusAxis domain={[40, 100]} tick={{ fill: "#64748b", fontSize: 9 }} />
+                    <Radar dataKey="score" stroke="#22d3ee" fill="#22d3ee" fillOpacity={0.25} />
+                    <Tooltip contentStyle={tooltipStyle} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ) : (
+            <EmptyState message="No benchmark data available." />
+          )}
+        </section>
+
+        {/* ── Apps ── */}
+        <section className={cn("py-10", activeSection === "apps" ? "block" : "hidden")}>
+          <SectionHeading title="Apps" live={model.hasRealData.apps} />
+
+          {model.hasRealData.apps && model.apps ? (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                <p className="mb-3 text-xs text-slate-500">Weekly adoption</p>
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={model.apps.adoptionSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="appsGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.2} />
+                          <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
+                      <XAxis dataKey="week" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="left" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 11 }} />
+                      <Area yAxisId="left" type="monotone" dataKey="apps" stroke="#22d3ee" fill="url(#appsGrad)" name="Apps" strokeWidth={1.5} />
+                      <Line yAxisId="right" type="monotone" dataKey="requestsK" stroke="#f59e0b" name="Requests (K)" strokeWidth={1.5} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-3 text-xs text-slate-500">Top apps</p>
+                <div className="divide-y divide-white/6">
+                  {model.apps.topApps.map((app) => (
+                    <div key={app.name} className="flex items-center justify-between py-2.5">
+                      <div>
+                        <p className="text-sm text-white">{app.name}</p>
+                        <p className="text-xs text-slate-500">{app.category} · {app.calls}</p>
+                      </div>
+                      <span className="flex items-center gap-1 text-xs text-emerald-400">
+                        <TrendingUp className="h-3 w-3" />
+                        +{app.growthPercent}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <EmptyState message="No app-level data available yet." />
+          )}
         </section>
 
         {/* ── Activity ── */}
-        <section id="activity" data-section="activity" className="scroll-mt-40 py-10">
+        <section className={cn("py-10", activeSection === "activity" ? "block" : "hidden")}>
           <SectionHeading title="Activity" live={model.hasRealData.activity} />
 
           {model.activity && model.hasRealData.activity ? (
@@ -657,7 +913,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
         </section>
 
         {/* ── Uptime ── */}
-        <section id="uptime" data-section="uptime" className="scroll-mt-40 py-10">
+        <section className={cn("py-10", activeSection === "uptime" ? "block" : "hidden")}>
           <SectionHeading title="Uptime" live={model.hasRealData.uptime} />
 
           {model.uptime && model.hasRealData.uptime ? (
@@ -722,7 +978,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
         </section>
 
         {/* ── API ── */}
-        <section id="api" data-section="api" className="scroll-mt-40 py-10">
+        <section className={cn("py-10", activeSection === "api" ? "block" : "hidden")}>
           <SectionHeading title="API" />
 
           <div className="grid gap-8 lg:grid-cols-2">
@@ -788,57 +1044,8 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           </div>
         </section>
 
-        {/* ── Apps (conditional) ── */}
-        {model.hasRealData.apps && model.apps && (
-          <section id="apps" data-section="apps" className="scroll-mt-40 py-10">
-            <SectionHeading title="Apps" live={true} />
-
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div>
-                <p className="mb-3 text-xs text-slate-500">Weekly adoption</p>
-                <div className="h-52">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={model.apps.adoptionSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="appsGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.2} />
-                          <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-                      <XAxis dataKey="week" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="left" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip contentStyle={tooltipStyle} />
-                      <Legend wrapperStyle={{ color: "#94a3b8", fontSize: 11 }} />
-                      <Area yAxisId="left" type="monotone" dataKey="apps" stroke="#22d3ee" fill="url(#appsGrad)" name="Apps" strokeWidth={1.5} />
-                      <Line yAxisId="right" type="monotone" dataKey="requestsK" stroke="#f59e0b" name="Requests (K)" strokeWidth={1.5} dot={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-3 text-xs text-slate-500">Top apps</p>
-                <div className="divide-y divide-white/6">
-                  {model.apps.topApps.map((app) => (
-                    <div key={app.name} className="flex items-center justify-between py-2.5">
-                      <div>
-                        <p className="text-sm text-white">{app.name}</p>
-                        <p className="text-xs text-slate-500">{app.category} · {app.calls}</p>
-                      </div>
-                      <span className="flex items-center gap-1 text-xs text-emerald-400">
-                        <TrendingUp className="h-3 w-3" />
-                        +{app.growthPercent}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

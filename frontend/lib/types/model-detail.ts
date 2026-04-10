@@ -136,6 +136,36 @@ export interface ModelActivityData {
   }>;
 }
 
+/**
+ * A single data point in an OpenRouter time-series performance chart.
+ * `y` maps provider/endpoint UUID → metric value.
+ */
+export interface ORPerfPoint {
+  x: string;
+  y: Record<string, number>;
+  volume?: Record<string, number>;
+}
+
+/**
+ * OpenRouter-sourced performance metrics for the Performance tab.
+ * Fetched from openrouter.ai/api/frontend/stats/* endpoints.
+ * This is shown in the UI while we don't yet have our own telemetry endpoint.
+ */
+export interface ORPerformanceStats {
+  /** Stable permaslug used to fetch these stats */
+  permaslug: string;
+  /** Throughput in tokens/sec per day */
+  throughput: ORPerfPoint[];
+  /** TTFT latency in ms per day */
+  latency: ORPerfPoint[];
+  /** End-to-end latency in ms per day */
+  latencyE2e: ORPerfPoint[];
+  /** Tool call error rate % per day */
+  toolCallErrorRate: ORPerfPoint[];
+  /** Structured output error rate % per day */
+  structuredOutputErrorRate: ORPerfPoint[];
+}
+
 export interface ModelApiData {
   baseUrl: string;
   endpoints: Array<{
@@ -178,6 +208,12 @@ export interface ModelDetailViewModel {
   activity?: ModelActivityData;
   /** Always populated (template-based using the model slug). */
   api: ModelApiData;
+  /**
+   * OpenRouter performance stats fetched from their frontend stats API.
+   * Shown in the Performance tab as a temporary data source until we have
+   * our own telemetry endpoint. Absent when the fetch fails or returns no data.
+   */
+  orPerformance?: ORPerformanceStats;
   /** Flags indicating which sections contain real data vs empty state. */
   hasRealData: ModelDataAvailability;
 }

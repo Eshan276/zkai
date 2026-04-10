@@ -46,6 +46,8 @@ export interface ORModel {
   supports_reasoning?: boolean;
   is_trainable_text?: boolean | null;
   endpoint?: OREndpoint;
+  /** Stable permaslug used for stats endpoints — may include a date suffix */
+  permaslug?: string;
 }
 
 // ─── Artificial Analysis API types ───────────────────────────────────────────
@@ -404,6 +406,68 @@ export function matchAAModel(aaModels: AAModel[], orModel: ORModel): AAModel | u
     if (displayName.includes(aaKey) || aaKey.includes(displayName)) return aa;
   }
   return undefined;
+}
+
+// ─── OpenRouter performance stats ────────────────────────────────────────────
+
+export interface ORPerformancePoint {
+  x: string;
+  y: Record<string, number>;
+  volume?: Record<string, number>;
+}
+
+export interface ORPerformanceData {
+  /** Throughput in tokens/sec per day, keyed by endpoint UUID */
+  throughput: ORPerformancePoint[];
+  /** TTFT latency in ms per day */
+  latency: ORPerformancePoint[];
+  /** End-to-end latency in ms per day */
+  latencyE2e: ORPerformancePoint[];
+  /** Tool call error rate % per day */
+  toolCallErrorRate: ORPerformancePoint[];
+  /** Structured output error rate % per day */
+  structuredOutputErrorRate: ORPerformancePoint[];
+  /** The stable permaslug used for these stats (may differ from URL slug) */
+  permaslug: string;
+}
+
+async function fetchORStat(path: string, permaslug: string): Promise<ORPerformancePoint[]> {
+  try {
+    const url = `https://openrouter.ai/api/frontend/stats/${path}?permaslug=${encodeURIComponent(permaslug)}`;
+    const res = await fetch(url, {
+      headers: {
+        Accept: '*/*',
+        Referer: 'https://openrouter.ai/',
+      },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    const json = await res.json() as { data?: ORPerformancePoint[] };
+    return json.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve the permaslug for a given URL slug by looking it up in the models catalog.
+ * The permaslug is stable and may differ from the URL slug (e.g. includes a date suffix).
+ */
+export function resolveORPermaslug(urlSlug: string, orModels: ORModel[]): string {
+  const match = orModels.find((m) => m.slug === urlSlug);
+  return match?.permaslug ?? urlSlug;
+}
+
+export async function fetchORPerformanceStats(permaslug: string): Promise<ORPerformanceData> {
+  const [throughput, latency, latencyE2e, toolCallErrorRate, structuredOutputErrorRate] =
+    await Promise.all([
+      fetchORStat('throughput-comparison', permaslug),
+      fetchORStat('latency-comparison', permaslug),
+      fetchORStat('latency-e2e-comparison', permaslug),
+      fetchORStat('tool-call-error-rate', permaslug),
+      fetchORStat('structured-output-error-rate', permaslug),
+    ]);
+  return { throughput, latency, latencyE2e, toolCallErrorRate, structuredOutputErrorRate, permaslug };
 }
 
 // ─── Main transform ───────────────────────────────────────────────────────────
