@@ -5,278 +5,38 @@ import {
   Search, Grid3X3, List, X, Check, ChevronDown, Copy,
   Sparkles, MessageSquare, Image, Music, Video, Cpu,
   FileText, Code2, Tag, Settings2, Scissors,
-  Building2, UserCircle, SlidersHorizontal
+  Building2, UserCircle, SlidersHorizontal, AlertCircle, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { MergedModel } from "@/lib/types/model";
 
-// ─── Model Data ───────────────────────────────────────────────────────────────
+type ModelCardModel = MergedModel;
 
-const models = [
-  {
-    id: "qwen-2.5-72b",
-    name: "Qwen 2.5 72B",
-    provider: "Alibaba",
-    author: "qwen",
-    description: "A powerful 72B parameter model optimized for complex reasoning, coding, and multilingual tasks. Features state-of-the-art performance on benchmarks with efficient inference.",
-    contextLength: 128000,
-    inputPriceRaw: 0.12,
-    inputPrice: "$0.12",
-    outputPrice: "$0.36",
-    tokens: "72B",
-    category: "text",
-    modalities: ["Text"],
-    series: ["Qwen"],
-    categories: ["Programming", "Multilingual"],
-    supportedParams: ["tools", "temperature", "top_p"],
-    distillable: true,
-    isNew: true,
-    isFree: false,
-    isOpenSource: true,
-    date: "Apr 3, 2026",
-  },
-  {
-    id: "claude-4-opus",
-    name: "Claude 4 Opus",
-    provider: "Anthropic",
-    author: "anthropic",
-    description: "The most capable Claude model for highly complex tasks. Excels at analysis, coding, math, and creative writing with nuanced understanding.",
-    contextLength: 200000,
-    inputPriceRaw: 15.0,
-    inputPrice: "$15.00",
-    outputPrice: "$75.00",
-    tokens: "400B",
-    category: "text",
-    modalities: ["Text"],
-    series: ["Claude"],
-    categories: ["Programming", "Roleplay", "Marketing"],
-    supportedParams: ["tools", "temperature", "top_p", "frequency_penalty"],
-    distillable: false,
-    isNew: false,
-    isFree: false,
-    isOpenSource: false,
-    date: "Mar 28, 2026",
-  },
-  {
-    id: "gpt-5-mini",
-    name: "GPT-5 Mini",
-    provider: "OpenAI",
-    author: "openai",
-    description: "A compact yet powerful model offering excellent performance-to-cost ratio. Ideal for production applications requiring fast inference.",
-    contextLength: 128000,
-    inputPriceRaw: 0.08,
-    inputPrice: "$0.08",
-    outputPrice: "$0.24",
-    tokens: "8B",
-    category: "text",
-    modalities: ["Text"],
-    series: ["GPT"],
-    categories: ["Programming", "Marketing"],
-    supportedParams: ["tools", "temperature"],
-    distillable: true,
-    isNew: true,
-    isFree: false,
-    isOpenSource: false,
-    date: "Apr 1, 2026",
-  },
-  {
-    id: "gemini-3-ultra",
-    name: "Gemini 3 Ultra",
-    provider: "Google",
-    author: "google",
-    description: "Google's flagship multimodal model with native image, audio, and video understanding. Supports real-time streaming and complex reasoning.",
-    contextLength: 1000000,
-    inputPriceRaw: 7.0,
-    inputPrice: "$7.00",
-    outputPrice: "$21.00",
-    tokens: "175B",
-    category: "multimodal",
-    modalities: ["Text", "Image", "Audio", "Video"],
-    series: ["Gemini"],
-    categories: ["Programming", "Marketing"],
-    supportedParams: ["tools", "temperature", "top_p"],
-    distillable: false,
-    isNew: true,
-    isFree: false,
-    isOpenSource: false,
-    date: "Apr 2, 2026",
-  },
-  {
-    id: "llama-4-maverick",
-    name: "Llama 4 Maverick",
-    provider: "Meta",
-    author: "meta-llama",
-    description: "Open-weights model pushing the boundaries of open-source AI. Excellent for fine-tuning and self-hosted deployments.",
-    contextLength: 256000,
-    inputPriceRaw: 0.05,
-    inputPrice: "$0.05",
-    outputPrice: "$0.15",
-    tokens: "70B",
-    category: "text",
-    modalities: ["Text"],
-    series: ["Llama"],
-    categories: ["Programming", "Roleplay"],
-    supportedParams: ["tools", "temperature", "top_p", "seed"],
-    distillable: true,
-    isNew: true,
-    isFree: true,
-    isOpenSource: true,
-    date: "Mar 30, 2026",
-  },
-  {
-    id: "flux-2-pro",
-    name: "Flux 2 Pro",
-    provider: "Black Forest Labs",
-    author: "black-forest-labs",
-    description: "State-of-the-art image generation model with unprecedented photorealism and style control. Supports high-resolution outputs up to 4K.",
-    contextLength: 0,
-    inputPriceRaw: 0.04,
-    inputPrice: "$0.04/img",
-    outputPrice: "N/A",
-    tokens: "12B",
-    category: "image",
-    modalities: ["Image"],
-    series: ["Flux"],
-    categories: ["Marketing"],
-    supportedParams: ["seed"],
-    distillable: false,
-    isNew: false,
-    isFree: false,
-    isOpenSource: false,
-    date: "Mar 15, 2026",
-  },
-  {
-    id: "whisper-v4",
-    name: "Whisper V4",
-    provider: "OpenAI",
-    author: "openai",
-    description: "Advanced speech recognition with near-perfect accuracy across 100+ languages. Real-time transcription with speaker diarization.",
-    contextLength: 0,
-    inputPriceRaw: 0.006,
-    inputPrice: "$0.006/min",
-    outputPrice: "N/A",
-    tokens: "2.5B",
-    category: "audio",
-    modalities: ["Audio"],
-    series: ["Whisper"],
-    categories: ["Multilingual"],
-    supportedParams: ["temperature"],
-    distillable: false,
-    isNew: false,
-    isFree: false,
-    isOpenSource: true,
-    date: "Feb 20, 2026",
-  },
-  {
-    id: "mistral-large-3",
-    name: "Mistral Large 3",
-    provider: "Mistral AI",
-    author: "mistralai",
-    description: "European-made LLM with strong multilingual capabilities and efficient inference. Optimized for enterprise deployments.",
-    contextLength: 128000,
-    inputPriceRaw: 2.0,
-    inputPrice: "$2.00",
-    outputPrice: "$6.00",
-    tokens: "123B",
-    category: "text",
-    modalities: ["Text"],
-    series: ["Mistral"],
-    categories: ["Programming", "Roleplay", "Marketing"],
-    supportedParams: ["tools", "temperature", "top_p"],
-    distillable: false,
-    isNew: false,
-    isFree: false,
-    isOpenSource: false,
-    date: "Mar 10, 2026",
-  },
-  {
-    id: "sora-2",
-    name: "Sora 2",
-    provider: "OpenAI",
-    author: "openai",
-    description: "Revolutionary video generation model creating photorealistic videos from text prompts. Supports up to 2 minutes of HD content.",
-    contextLength: 0,
-    inputPriceRaw: 0.5,
-    inputPrice: "$0.50/sec",
-    outputPrice: "N/A",
-    tokens: "N/A",
-    category: "video",
-    modalities: ["Video"],
-    series: ["Sora"],
-    categories: ["Marketing"],
-    supportedParams: ["seed"],
-    distillable: false,
-    isNew: true,
-    isFree: false,
-    isOpenSource: false,
-    date: "Apr 4, 2026",
-  },
-  {
-    id: "deepseek-r2",
-    name: "DeepSeek R2",
-    provider: "DeepSeek",
-    author: "deepseek-ai",
-    description: "Reasoning-focused model with explicit chain-of-thought capabilities. Exceptional at math, coding, and logical puzzles.",
-    contextLength: 64000,
-    inputPriceRaw: 0.14,
-    inputPrice: "$0.14",
-    outputPrice: "$0.42",
-    tokens: "67B",
-    category: "text",
-    modalities: ["Text"],
-    series: ["DeepSeek"],
-    categories: ["Programming"],
-    supportedParams: ["temperature", "top_p"],
-    distillable: true,
-    isNew: true,
-    isFree: true,
-    isOpenSource: true,
-    date: "Apr 2, 2026",
-  },
-  {
-    id: "cohere-command-r-plus",
-    name: "Command R+",
-    provider: "Cohere",
-    author: "cohere",
-    description: "Enterprise-grade model optimized for retrieval-augmented generation. Built-in citation and grounding capabilities.",
-    contextLength: 128000,
-    inputPriceRaw: 3.0,
-    inputPrice: "$3.00",
-    outputPrice: "$15.00",
-    tokens: "104B",
-    category: "text",
-    modalities: ["Text", "File"],
-    series: ["Command"],
-    categories: ["Programming", "Marketing"],
-    supportedParams: ["tools", "temperature"],
-    distillable: false,
-    isNew: false,
-    isFree: false,
-    isOpenSource: false,
-    date: "Feb 28, 2026",
-  },
-  {
-    id: "stable-audio-3",
-    name: "Stable Audio 3",
-    provider: "Stability AI",
-    author: "stability-ai",
-    description: "Generate high-quality music and sound effects from text descriptions. Supports variable length outputs with stem separation.",
-    contextLength: 0,
-    inputPriceRaw: 0.02,
-    inputPrice: "$0.02/sec",
-    outputPrice: "N/A",
-    tokens: "1.5B",
-    category: "audio",
-    modalities: ["Audio"],
-    series: ["Stable"],
-    categories: ["Marketing"],
-    supportedParams: ["seed", "temperature"],
-    distillable: false,
-    isNew: true,
-    isFree: false,
-    isOpenSource: false,
-    date: "Mar 25, 2026",
-  },
-];
+function deriveFilterLists(models: readonly ModelCardModel[]) {
+  const modalities = new Set<string>();
+  const series = new Set<string>();
+  const categories = new Set<string>();
+  const params = new Set<string>();
+  const providers = new Set<string>();
+  const authors = new Set<string>();
+  for (const m of models) {
+    m.modalities.forEach((x) => modalities.add(x));
+    m.series.forEach((x) => series.add(x));
+    m.categories.forEach((x) => categories.add(x));
+    m.supportedParams.forEach((x) => params.add(x));
+    providers.add(m.provider);
+    authors.add(m.author);
+  }
+  const sort = (a: string, b: string) => a.localeCompare(b);
+  return {
+    modalities: [...modalities].sort(sort),
+    series: [...series].sort(sort),
+    categories: [...categories].sort(sort),
+    params: [...params].sort(sort),
+    providers: [...providers].sort(sort),
+    authors: [...authors].sort(sort),
+  };
+}
 
 // ─── Static Config ─────────────────────────────────────────────────────────────
 
@@ -295,13 +55,6 @@ const sortOptions = [
   { id: "price-low", label: "Price: Low to High" },
   { id: "context", label: "Context Length" },
 ];
-
-const ALL_PROVIDERS = ["OpenAI", "Anthropic", "Google", "Meta", "Alibaba", "Mistral AI", "DeepSeek", "Cohere", "Black Forest Labs", "Stability AI"];
-const ALL_AUTHORS = ["openai", "anthropic", "google", "meta-llama", "qwen", "mistralai", "deepseek-ai", "cohere", "black-forest-labs", "stability-ai"];
-const ALL_SERIES = ["GPT", "Claude", "Gemini", "Llama", "Qwen", "Mistral", "DeepSeek", "Command", "Flux", "Whisper", "Sora", "Stable"];
-const ALL_CATEGORIES_FILTER = ["Programming", "Roleplay", "Marketing", "Multilingual"];
-const ALL_MODALITIES = ["Text", "Image", "File", "Audio", "Video"];
-const ALL_PARAMS = ["tools", "temperature", "top_p", "frequency_penalty", "seed"];
 
 // ─── Collapsible Section ───────────────────────────────────────────────────────
 
@@ -404,7 +157,7 @@ const modalityIconMap: Record<string, React.ElementType> = {
   multimodal: Cpu,
 };
 
-function ModelCard({ model, index, viewMode }: { model: typeof models[0]; index: number; viewMode: "grid" | "list" }) {
+function ModelCard({ model, index, viewMode }: { model: ModelCardModel; index: number; viewMode: "grid" | "list" }) {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -554,14 +307,25 @@ interface SidebarFilters {
   authors: string[];
 }
 
+interface FilterLists {
+  modalities: string[];
+  series: string[];
+  categories: string[];
+  params: string[];
+  providers: string[];
+  authors: string[];
+}
+
 function Sidebar({
   filters,
   setFilters,
+  filterLists,
   showMobile,
   setShowMobile,
 }: {
   filters: SidebarFilters;
   setFilters: React.Dispatch<React.SetStateAction<SidebarFilters>>;
+  filterLists: FilterLists;
   showMobile: boolean;
   setShowMobile: (v: boolean) => void;
 }) {
@@ -606,7 +370,7 @@ function Sidebar({
 
           {/* Input Modalities */}
           <FilterSection title="Input Modalities" icon={FileText}>
-            {ALL_MODALITIES.map((m) => (
+            {filterLists.modalities.map((m) => (
               <FilterItem key={m} label={m} checked={filters.modalities.includes(m)} onChange={() => toggle("modalities", m)} />
             ))}
           </FilterSection>
@@ -640,41 +404,45 @@ function Sidebar({
 
           {/* Series */}
           <FilterSection title="Series" icon={Sparkles} defaultOpen={false}>
-            {ALL_SERIES.slice(0, 4).map((s) => (
+            {filterLists.series.slice(0, 4).map((s) => (
               <FilterItem key={s} label={s} checked={filters.series.includes(s)} onChange={() => toggle("series", s)} />
             ))}
-            <details className="group/more">
-              <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none flex items-center gap-1">
-                <span>More...</span>
-              </summary>
-              <div className="mt-1">
-                {ALL_SERIES.slice(4).map((s) => (
-                  <FilterItem key={s} label={s} checked={filters.series.includes(s)} onChange={() => toggle("series", s)} />
-                ))}
-              </div>
-            </details>
+            {filterLists.series.length > 4 && (
+              <details className="group/more">
+                <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none flex items-center gap-1">
+                  <span>More...</span>
+                </summary>
+                <div className="mt-1">
+                  {filterLists.series.slice(4).map((s) => (
+                    <FilterItem key={s} label={s} checked={filters.series.includes(s)} onChange={() => toggle("series", s)} />
+                  ))}
+                </div>
+              </details>
+            )}
           </FilterSection>
 
           {/* Categories */}
           <FilterSection title="Categories" icon={Tag} defaultOpen={false}>
-            {ALL_CATEGORIES_FILTER.map((c) => (
+            {filterLists.categories.map((c) => (
               <FilterItem key={c} label={c} checked={filters.categories.includes(c)} onChange={() => toggle("categories", c)} />
             ))}
           </FilterSection>
 
           {/* Supported Parameters */}
           <FilterSection title="Supported Parameters" icon={Code2} defaultOpen={false}>
-            {ALL_PARAMS.slice(0, 3).map((p) => (
+            {filterLists.params.slice(0, 3).map((p) => (
               <FilterItem key={p} label={p} checked={filters.params.includes(p)} onChange={() => toggle("params", p)} />
             ))}
-            <details>
-              <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none">More...</summary>
-              <div className="mt-1">
-                {ALL_PARAMS.slice(3).map((p) => (
-                  <FilterItem key={p} label={p} checked={filters.params.includes(p)} onChange={() => toggle("params", p)} />
-                ))}
-              </div>
-            </details>
+            {filterLists.params.length > 3 && (
+              <details>
+                <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none">More...</summary>
+                <div className="mt-1">
+                  {filterLists.params.slice(3).map((p) => (
+                    <FilterItem key={p} label={p} checked={filters.params.includes(p)} onChange={() => toggle("params", p)} />
+                  ))}
+                </div>
+              </details>
+            )}
           </FilterSection>
 
           {/* Distillable */}
@@ -699,32 +467,36 @@ function Sidebar({
 
           {/* Providers */}
           <FilterSection title="Providers" icon={Building2} defaultOpen={false}>
-            {ALL_PROVIDERS.slice(0, 4).map((p) => (
+            {filterLists.providers.slice(0, 4).map((p) => (
               <FilterItem key={p} label={p} checked={filters.providers.includes(p)} onChange={() => toggle("providers", p)} />
             ))}
-            <details>
-              <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none">More...</summary>
-              <div className="mt-1">
-                {ALL_PROVIDERS.slice(4).map((p) => (
-                  <FilterItem key={p} label={p} checked={filters.providers.includes(p)} onChange={() => toggle("providers", p)} />
-                ))}
-              </div>
-            </details>
+            {filterLists.providers.length > 4 && (
+              <details>
+                <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none">More...</summary>
+                <div className="mt-1">
+                  {filterLists.providers.slice(4).map((p) => (
+                    <FilterItem key={p} label={p} checked={filters.providers.includes(p)} onChange={() => toggle("providers", p)} />
+                  ))}
+                </div>
+              </details>
+            )}
           </FilterSection>
 
           {/* Model Authors */}
           <FilterSection title="Model Authors" icon={UserCircle} defaultOpen={false}>
-            {ALL_AUTHORS.slice(0, 4).map((a) => (
+            {filterLists.authors.slice(0, 4).map((a) => (
               <FilterItem key={a} label={a} checked={filters.authors.includes(a)} onChange={() => toggle("authors", a)} />
             ))}
-            <details>
-              <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none">More...</summary>
-              <div className="mt-1">
-                {ALL_AUTHORS.slice(4).map((a) => (
-                  <FilterItem key={a} label={a} checked={filters.authors.includes(a)} onChange={() => toggle("authors", a)} />
-                ))}
-              </div>
-            </details>
+            {filterLists.authors.length > 4 && (
+              <details>
+                <summary className="text-xs text-white/45 hover:text-white cursor-pointer mt-1 list-none">More...</summary>
+                <div className="mt-1">
+                  {filterLists.authors.slice(4).map((a) => (
+                    <FilterItem key={a} label={a} checked={filters.authors.includes(a)} onChange={() => toggle("authors", a)} />
+                  ))}
+                </div>
+              </details>
+            )}
           </FilterSection>
 
           {/* Reset */}
@@ -771,6 +543,38 @@ export function ModelsContent() {
   });
 
   const [filters, setFilters] = useState<SidebarFilters>(resetFilters);
+
+  const [models, setModels] = useState<MergedModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch("/api/models")
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<{ data?: MergedModel[]; error?: string }>;
+      })
+      .then((json) => {
+        if (cancelled) return;
+        if (json.data) {
+          setModels(json.data);
+          setFetchError(null);
+        } else {
+          setFetchError(json.error ?? "Failed to load models");
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setFetchError(err instanceof Error ? err.message : "Failed to load models");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const filterLists = useMemo(() => deriveFilterLists(models), [models]);
 
   const filtered = useMemo(() => {
     const result = models.filter((m) => {
@@ -821,7 +625,7 @@ export function ModelsContent() {
   return (
     <div className="relative flex flex-1 min-h-0 overflow-hidden text-white">
       {/* ── Left Sidebar (desktop static + mobile overlay) ── */}
-      <Sidebar filters={filters} setFilters={setFilters} showMobile={showMobile} setShowMobile={setShowMobile} />
+      <Sidebar filters={filters} setFilters={setFilters} filterLists={filterLists} showMobile={showMobile} setShowMobile={setShowMobile} />
 
       {/* ── Right Panel ───────────────────────────────── */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
@@ -887,6 +691,11 @@ export function ModelsContent() {
               )}
             </div>
 
+            {/* Loading spinner */}
+            {loading && (
+              <Loader2 className="w-4 h-4 text-white/35 animate-spin shrink-0" />
+            )}
+
             {/* View toggle */}
             <div className="hidden sm:flex items-center border border-white/10 rounded-lg overflow-hidden shrink-0">
               <button
@@ -935,6 +744,29 @@ export function ModelsContent() {
           </div>
         </div>
 
+        {/* Loading bar */}
+        {loading && (
+          <div className="shrink-0 h-0.5 bg-white/10 overflow-hidden">
+            <div className="h-full bg-white/50 animate-[shimmer_1.4s_ease-in-out_infinite]" style={{ width: "45%", animation: "shimmerBar 1.4s ease-in-out infinite" }} />
+            <style>{`@keyframes shimmerBar{0%{transform:translateX(-100%)}100%{transform:translateX(280%)}}`}</style>
+          </div>
+        )}
+
+        {/* Error banner */}
+        {fetchError && !loading && (
+          <div className="shrink-0 flex items-center gap-2.5 px-4 lg:px-6 py-2.5 bg-red-950/40 border-b border-red-500/20 text-red-300 text-xs">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+            <span>Could not load models: {fetchError}</span>
+            <button
+              onClick={() => setFetchError(null)}
+              className="ml-auto shrink-0 p-0.5 rounded hover:bg-red-500/20 transition-colors"
+              aria-label="Dismiss error"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* ── Scrollable Model Grid ──────────────────── */}
         <div className="relative flex-1 overflow-y-auto overscroll-contain px-4 lg:px-6 py-5">
           {filtered.length === 0 ? (
@@ -942,14 +774,25 @@ export function ModelsContent() {
               <div className="w-14 h-14 rounded-full bg-white/[0.06] flex items-center justify-center mb-4">
                 <Search className="w-6 h-6 text-white/45" />
               </div>
-              <h3 className="text-lg font-semibold tracking-tight mb-2">No models found</h3>
-              <p className="text-white/50 text-sm max-w-xs">Try adjusting your filters or search query.</p>
-              <button
-                onClick={() => { setSearch(""); setCategory("all"); setFilters(resetFilters()); }}
-                className="mt-5 px-4 py-2 text-sm border border-white/10 rounded-lg hover:bg-white/10 transition-colors"
-              >
-                Clear all filters
-              </button>
+              {models.length === 0 ? (
+                <>
+                  <h3 className="text-lg font-semibold tracking-tight mb-2">No models available</h3>
+                  <p className="text-white/50 text-sm max-w-sm">
+                    Models appear here only when an active provider is registered and its model matches OpenRouter. Start a provider or check your database configuration.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold tracking-tight mb-2">No models found</h3>
+                  <p className="text-white/50 text-sm max-w-xs">Try adjusting your filters or search query.</p>
+                  <button
+                    onClick={() => { setSearch(""); setCategory("all"); setFilters(resetFilters()); }}
+                    className="mt-5 px-4 py-2 text-sm border border-white/10 rounded-lg hover:bg-white/10 transition-colors"
+                  >
+                    Clear all filters
+                  </button>
+                </>
+              )}
             </div>
           ) : viewMode === "grid" ? (
             <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
