@@ -36,7 +36,7 @@ import {
 
 import { Navigation } from "@/components/navigation";
 import { cn } from "@/lib/utils";
-import type { ModelDetailViewModel, ORPerformanceStats, ORPerfPoint } from "@/lib/types/model-detail";
+import type { ModelDetailViewModel, ORPerformanceStats, ORPerfPoint, ORBenchmarkData, ORAAbenchmarkEntry, ORDesignArenaRecord } from "@/lib/types/model-detail";
 
 type SectionId = "pricing" | "providers" | "performance" | "benchmarks" | "apps" | "activity" | "uptime" | "api";
 
@@ -277,6 +277,205 @@ function ORPerformanceSection({ data }: { data: ORPerformanceStats }) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── OpenRouter benchmark section ────────────────────────────────────────────
+
+const AA_EVAL_LABELS: Record<string, string> = {
+  artificial_analysis_intelligence_index: "Intelligence Index",
+  artificial_analysis_coding_index: "Coding Index",
+  artificial_analysis_agentic_index: "Agentic Index",
+  gpqa: "GPQA",
+  hle: "HLE",
+  lcr: "LCR",
+  ifbench: "IFBench",
+  scicode: "SciCode",
+  terminalbench_hard: "TerminalBench Hard",
+  critpt: "CritPT",
+  tau2: "TAU-2",
+  gdpval_aa: "GDPVal",
+  aa_omniscience_accuracy: "Omniscience Accuracy",
+  aa_omniscience_non_hallucination_rate: "Non-Hallucination Rate",
+};
+
+const DA_CATEGORY_LABELS: Record<string, string> = {
+  ascii: "ASCII Art",
+  svg: "SVG",
+  website: "Website",
+  codecategories: "Code",
+  gamedev: "Game Dev",
+  dataviz: "Data Viz",
+  "3d": "3D",
+  uicomponent: "UI Component",
+  fullstack: "Fullstack",
+  agon_webapps: "Web Apps",
+  nativeapps: "Native Apps",
+  mobileapps: "Mobile Apps",
+};
+
+function formatEvalValue(key: string, value: number): string {
+  if (key.endsWith("_index")) return value.toFixed(1);
+  if (value > 1) return value.toFixed(1);
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function AABenchmarkCard({ entry }: { entry: ORAAbenchmarkEntry }) {
+  const evals = entry.benchmark_data.evaluations;
+  const topKeys = [
+    "artificial_analysis_intelligence_index",
+    "artificial_analysis_coding_index",
+    "artificial_analysis_agentic_index",
+  ].filter((k) => evals[k] != null);
+
+  const otherKeys = Object.keys(evals).filter(
+    (k) => !topKeys.includes(k) && evals[k] != null,
+  );
+
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-white">{entry.aa_name}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Artificial Analysis</p>
+        </div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          {entry.percentiles.intelligence_percentile != null && (
+            <span className="rounded-full bg-cyan-500/10 px-2.5 py-0.5 text-[11px] text-cyan-400">
+              Intelligence p{entry.percentiles.intelligence_percentile}
+            </span>
+          )}
+          {entry.percentiles.coding_percentile != null && (
+            <span className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[11px] text-violet-400">
+              Coding p{entry.percentiles.coding_percentile}
+            </span>
+          )}
+          {entry.percentiles.agentic_percentile != null && (
+            <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-400">
+              Agentic p{entry.percentiles.agentic_percentile}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {topKeys.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          {topKeys.map((k) => (
+            <div key={k} className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-3">
+              <p className="text-[10px] uppercase tracking-[0.08em] text-slate-500 mb-1">
+                {AA_EVAL_LABELS[k] ?? k}
+              </p>
+              <p className="text-lg font-semibold text-white">{formatEvalValue(k, evals[k])}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {otherKeys.length > 0 && (
+        <div>
+          <p className="text-[11px] text-slate-500 mb-2">Detailed evaluations</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {otherKeys.map((k) => (
+              <div key={k} className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                <span className="text-[11px] text-slate-400">{AA_EVAL_LABELS[k] ?? k}</span>
+                <span className="text-[11px] font-medium text-white ml-2">{formatEvalValue(k, evals[k])}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesignArenaSection({
+  records,
+  eloBounds,
+}: {
+  records: ORDesignArenaRecord[];
+  eloBounds?: { min: number; max: number };
+}) {
+  const arenas = Array.from(new Set(records.map((r) => r.arena)));
+
+  return (
+    <div className="space-y-6">
+      {arenas.map((arena) => {
+        const arenaRecords = records.filter((r) => r.arena === arena);
+        return (
+          <div key={arena}>
+            <p className="mb-3 text-xs font-medium uppercase tracking-[0.1em] text-slate-500">
+              {arena === "models" ? "Design Arena — Models" : `Design Arena — ${arena.charAt(0).toUpperCase() + arena.slice(1)}`}
+            </p>
+            <div className="space-y-2">
+              {arenaRecords.map((r) => {
+                const eloMin = eloBounds?.min ?? 500;
+                const eloMax = eloBounds?.max ?? 1400;
+                const eloNorm = Math.max(0, Math.min(100, ((r.elo - eloMin) / (eloMax - eloMin)) * 100));
+                return (
+                  <div
+                    key={`${r.arena}-${r.category}`}
+                    className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3"
+                  >
+                    <div className="w-28 shrink-0">
+                      <p className="text-[11px] text-slate-300">
+                        {DA_CATEGORY_LABELS[r.category] ?? r.category}
+                      </p>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="h-1.5 w-full rounded-full bg-white/[0.06]">
+                        <div
+                          className="h-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-violet-500"
+                          style={{ width: `${eloNorm}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0 text-right">
+                      <div>
+                        <p className="text-[10px] text-slate-500">ELO</p>
+                        <p className="text-sm font-semibold text-white">{r.elo}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500">Win Rate</p>
+                        <p className="text-sm font-semibold text-white">{r.win_rate.toFixed(1)}%</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500">Percentile</p>
+                        <p className="text-sm font-semibold text-white">p{r.elo_percentile}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ORBenchmarksSection({ data }: { data: ORBenchmarkData }) {
+  return (
+    <div className="space-y-8">
+      <p className="text-[11px] text-slate-600">
+        Source: OpenRouter · Artificial Analysis &amp; Design Arena · data is model-specific and updated periodically
+      </p>
+
+      {data.aaBenchmarks.length > 0 && (
+        <div className="space-y-4">
+          <p className="text-xs font-medium uppercase tracking-[0.1em] text-slate-500">
+            Artificial Analysis Benchmarks
+          </p>
+          {data.aaBenchmarks.map((entry) => (
+            <AABenchmarkCard key={entry.aa_id} entry={entry} />
+          ))}
+        </div>
+      )}
+
+      {data.designArena.length > 0 && (
+        <DesignArenaSection records={data.designArena} eloBounds={data.eloBounds} />
+      )}
     </div>
   );
 }
@@ -765,8 +964,15 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
 
         {/* ── Benchmarks ── */}
         <section className={cn("py-10", activeSection === "benchmarks" ? "block" : "hidden")}>
-          <SectionHeading title="Benchmarks" live={model.hasRealData.performance} />
+          <SectionHeading title="Benchmarks" live={false} />
 
+          {model.orBenchmarks ? (
+            <ORBenchmarksSection data={model.orBenchmarks} />
+          ) : (
+            <EmptyState message="No benchmark data available for this model." />
+          )}
+
+          {/* ── zkAI / Artificial Analysis radar (commented out until we have our own benchmark endpoint) ──
           {model.performance && model.performance.benchmarkRadar && model.performance.benchmarkRadar.length > 0 ? (
             <div>
               <p className="mb-3 text-xs text-slate-500">Capability radar</p>
@@ -785,6 +991,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
           ) : (
             <EmptyState message="No benchmark data available." />
           )}
+          ── end zkAI benchmark radar ── */}
         </section>
 
         {/* ── Apps ── */}

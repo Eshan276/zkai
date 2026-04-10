@@ -166,6 +166,64 @@ export interface ORPerformanceStats {
   structuredOutputErrorRate: ORPerfPoint[];
 }
 
+// ─── OpenRouter benchmark types ───────────────────────────────────────────────
+
+/** One model variant returned by the AA benchmarks endpoint */
+export interface ORAAbenchmarkEntry {
+  aa_id: string;
+  aa_slug: string;
+  aa_name: string;
+  permaslug: string;
+  openrouter_slug: string;
+  benchmark_data: {
+    model_type: string;
+    evaluations: Record<string, number>;
+  };
+  last_updated_at: number;
+  percentiles: {
+    intelligence_percentile?: number;
+    coding_percentile?: number;
+    agentic_percentile?: number;
+  };
+}
+
+/** One record returned by the Design Arena benchmarks endpoint */
+export interface ORDesignArenaRecord {
+  da_model_id: string;
+  display_name: string;
+  provider: string;
+  openrouter_id: string;
+  permaslug: string;
+  arena: string;
+  category: string;
+  elo: number;
+  win_rate: number;
+  avg_generation_time_ms: number | null;
+  last_updated_at: number;
+  elo_percentile: number;
+  first_place: number;
+  second_place: number;
+  third_place: number;
+  fourth_place: number;
+  total_tournaments: number;
+}
+
+/**
+ * OpenRouter-sourced benchmark data for the Benchmarks tab.
+ * Fetched from the internal OR benchmark endpoints.
+ * Absent when both endpoints return empty data.
+ */
+export interface ORBenchmarkData {
+  /** Model slug used to fetch these benchmarks */
+  slug: string;
+  /** Artificial Analysis benchmark entries (may be multiple variants e.g. reasoning / non-reasoning) */
+  aaBenchmarks: ORAAbenchmarkEntry[];
+  /** Design Arena records across categories */
+  designArena: ORDesignArenaRecord[];
+  /** ELO bounds for normalising design arena scores */
+  eloBounds?: { min: number; max: number };
+}
+
 export interface ModelApiData {
   baseUrl: string;
   endpoints: Array<{
@@ -214,6 +272,11 @@ export interface ModelDetailViewModel {
    * our own telemetry endpoint. Absent when the fetch fails or returns no data.
    */
   orPerformance?: ORPerformanceStats;
+  /**
+   * OpenRouter benchmark data (Artificial Analysis + Design Arena).
+   * Shown in the Benchmarks tab. Absent when both endpoints return empty data.
+   */
+  orBenchmarks?: ORBenchmarkData;
   /** Flags indicating which sections contain real data vs empty state. */
   hasRealData: ModelDataAvailability;
 }

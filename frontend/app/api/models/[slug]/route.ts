@@ -6,6 +6,7 @@ import {
   fetchHourlyJobStats,
   fetchJobPerformanceStats,
   fetchORPerformanceStats,
+  fetchORBenchmarks,
   resolveORPermaslug,
   matchAAModel,
   deriveCategory,
@@ -39,11 +40,12 @@ export async function GET(
 
     const permaslug = resolveORPermaslug(slug, orModels);
 
-    const [dbProviders, hourlyStats, jobPerfStats, orPerfStats] = await Promise.all([
+    const [dbProviders, hourlyStats, jobPerfStats, orPerfStats, orBenchmarkData] = await Promise.all([
       fetchProvidersForModel(slug),
       fetchHourlyJobStats(slug),
       fetchJobPerformanceStats(slug),
       fetchORPerformanceStats(permaslug),
+      fetchORBenchmarks(slug),
     ]);
 
     const aaModel = matchAAModel(aaModels, orModel);
@@ -346,6 +348,10 @@ export async function GET(
       orPerfStats.latency.length > 0 ||
       orPerfStats.latencyE2e.length > 0;
 
+    const hasORBenchmarks =
+      orBenchmarkData.aaBenchmarks.length > 0 ||
+      orBenchmarkData.designArena.length > 0;
+
     const viewModel: ModelDetailViewModel = {
       hero,
       price,
@@ -362,6 +368,14 @@ export async function GET(
           latencyE2e: orPerfStats.latencyE2e,
           toolCallErrorRate: orPerfStats.toolCallErrorRate,
           structuredOutputErrorRate: orPerfStats.structuredOutputErrorRate,
+        },
+      }),
+      ...(hasORBenchmarks && {
+        orBenchmarks: {
+          slug,
+          aaBenchmarks: orBenchmarkData.aaBenchmarks,
+          designArena: orBenchmarkData.designArena,
+          ...(orBenchmarkData.eloBounds && { eloBounds: orBenchmarkData.eloBounds }),
         },
       }),
       hasRealData: {

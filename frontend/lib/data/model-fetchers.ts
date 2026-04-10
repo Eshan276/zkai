@@ -470,6 +470,96 @@ export async function fetchORPerformanceStats(permaslug: string): Promise<ORPerf
   return { throughput, latency, latencyE2e, toolCallErrorRate, structuredOutputErrorRate, permaslug };
 }
 
+// ─── OpenRouter benchmark data ────────────────────────────────────────────────
+
+export interface ORAAbenchmarkEntry {
+  aa_id: string;
+  aa_slug: string;
+  aa_name: string;
+  permaslug: string;
+  openrouter_slug: string;
+  benchmark_data: {
+    model_type: string;
+    evaluations: Record<string, number>;
+  };
+  last_updated_at: number;
+  percentiles: {
+    intelligence_percentile?: number;
+    coding_percentile?: number;
+    agentic_percentile?: number;
+  };
+}
+
+export interface ORDesignArenaRecord {
+  da_model_id: string;
+  display_name: string;
+  provider: string;
+  openrouter_id: string;
+  permaslug: string;
+  arena: string;
+  category: string;
+  elo: number;
+  win_rate: number;
+  avg_generation_time_ms: number | null;
+  last_updated_at: number;
+  elo_percentile: number;
+  first_place: number;
+  second_place: number;
+  third_place: number;
+  fourth_place: number;
+  total_tournaments: number;
+}
+
+export interface ORBenchmarkResult {
+  aaBenchmarks: ORAAbenchmarkEntry[];
+  designArena: ORDesignArenaRecord[];
+  eloBounds?: { min: number; max: number };
+}
+
+/**
+ * Fetch Artificial Analysis + Design Arena benchmark data from OpenRouter's
+ * internal benchmark endpoints for a given model slug.
+ * Returns empty arrays on any failure — these endpoints are undocumented and
+ * may not have data for every model.
+ */
+export async function fetchORBenchmarks(slug: string): Promise<ORBenchmarkResult> {
+  const baseHeaders = {
+    Accept: '*/*',
+    Referer: `https://openrouter.ai/${slug}`,
+  };
+
+  const [aaRes, daRes] = await Promise.all([
+    fetch(
+      `https://openrouter.ai/api/internal/v1/artificial-analysis-benchmarks?slug=${encodeURIComponent(slug)}`,
+      { headers: baseHeaders, next: { revalidate: 300 } },
+    ).catch(() => null),
+    fetch(
+      `https://openrouter.ai/api/internal/v1/design-arena-benchmarks?slug=${encodeURIComponent(slug)}`,
+      { headers: baseHeaders, next: { revalidate: 300 } },
+    ).catch(() => null),
+  ]);
+
+  let aaBenchmarks: ORAAbenchmarkEntry[] = [];
+  if (aaRes?.ok) {
+    try {
+      const json = await aaRes.json() as { data?: ORAAbenchmarkEntry[] };
+      aaBenchmarks = json.data ?? [];
+    } catch { /* ignore */ }
+  }
+
+  let designArena: ORDesignArenaRecord[] = [];
+  let eloBounds: { min: number; max: number } | undefined;
+  if (daRes?.ok) {
+    try {
+      const json = await daRes.json() as { data?: { records?: ORDesignArenaRecord[]; eloBounds?: { min: number; max: number } } };
+      designArena = json.data?.records ?? [];
+      eloBounds = json.data?.eloBounds;
+    } catch { /* ignore */ }
+  }
+
+  return { aaBenchmarks, designArena, eloBounds };
+}
+
 // ─── Main transform ───────────────────────────────────────────────────────────
 
 export function transformModel(
