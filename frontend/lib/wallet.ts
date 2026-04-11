@@ -75,3 +75,33 @@ export async function connectWallet(): Promise<{ api: MidnightWalletEnabledAPI; 
 export async function refreshWalletState(api: MidnightWalletEnabledAPI): Promise<MidnightWalletState> {
   return fetchState(api);
 }
+
+/** localStorage key: user chose to stay connected across pages / reloads */
+const WALLET_SESSION_KEY = 'zkai_midnight_wallet_connected';
+
+export function persistWalletSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(WALLET_SESSION_KEY, '1');
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+export function clearWalletSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(WALLET_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function hasPersistedWalletSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(WALLET_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}

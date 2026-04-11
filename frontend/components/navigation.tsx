@@ -4,7 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Copy, LogOut, Menu, Wallet, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { connectWallet, refreshWalletState, waitForExtension, type ConnectedAPI, type MidnightWalletState } from "@/lib/wallet";
+import {
+  clearWalletSession,
+  connectWallet,
+  hasPersistedWalletSession,
+  persistWalletSession,
+  refreshWalletState,
+  waitForExtension,
+  type ConnectedAPI,
+  type MidnightWalletState,
+} from "@/lib/wallet";
 
 type NavWalletCallbacks = {
   onWalletChange?: (address: string | null) => void;
@@ -34,10 +43,49 @@ function NavWalletButton({
   const [hasExtension, setHasExtension] = useState<boolean | null>(null);
   const apiRef = useRef<Awaited<ReturnType<typeof connectWallet>>["api"] | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoReconnectAttempted = useRef(false);
+  const walletCallbacksRef = useRef({ onWalletChange, onApiChange });
+  walletCallbacksRef.current = { onWalletChange, onApiChange };
 
   useEffect(() => {
     waitForExtension(3000).then((ext) => setHasExtension(!!ext));
   }, []);
+
+  // Restore session after navigation or reload when user previously connected
+  useEffect(() => {
+    if (hasExtension !== true || walletState) return;
+    if (!hasPersistedWalletSession()) return;
+    if (autoReconnectAttempted.current) return;
+    autoReconnectAttempted.current = true;
+
+    let cancelled = false;
+    (async () => {
+      setConnecting(true);
+      setError("");
+      try {
+        const { api, state } = await connectWallet();
+        if (cancelled) return;
+        apiRef.current = api;
+        setWalletState(state);
+        persistWalletSession();
+        const { onWalletChange: ow, onApiChange: oa } = walletCallbacksRef.current;
+        ow?.(state.address);
+        oa?.(api as unknown as ConnectedAPI);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          clearWalletSession();
+          setError(e instanceof Error ? e.message : "Could not restore wallet");
+        }
+      } finally {
+        if (!cancelled) setConnecting(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      autoReconnectAttempted.current = false;
+    };
+  }, [hasExtension, walletState]);
 
   useEffect(() => {
     if (!walletState || !apiRef.current) return;
@@ -59,6 +107,7 @@ function NavWalletButton({
       const { api, state } = await connectWallet();
       apiRef.current = api;
       setWalletState(state);
+      persistWalletSession();
       onWalletChange?.(state.address);
       onApiChange?.(api as unknown as ConnectedAPI);
       onClose?.();
@@ -72,6 +121,7 @@ function NavWalletButton({
   function disconnect() {
     if (pollRef.current) clearInterval(pollRef.current);
     apiRef.current = null;
+    clearWalletSession();
     setWalletState(null);
     onWalletChange?.(null);
     onApiChange?.(null);
