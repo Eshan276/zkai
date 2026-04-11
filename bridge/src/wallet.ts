@@ -118,26 +118,33 @@ export async function startWallet(): Promise<WalletContext> {
   console.log('Initializing wallet...');
   _walletCtx = await initWallet(seed);
 
-  console.log('Syncing with Midnight preprod...');
+  console.log('Syncing with Midnight preprod (no timeout — will wait until synced)...');
   let lastState: string = '';
+  let dotCount = 0;
+  const startMs = Date.now();
   await Rx.firstValueFrom(
     _walletCtx.wallet.state().pipe(
-      Rx.throttleTime(5000),
+      Rx.throttleTime(10000),
       Rx.tap((s: any) => {
         const dust = s.dust?.balance?.(new Date()) ?? 0n;
+        const elapsed = Math.round((Date.now() - startMs) / 1000);
         const summary = `isSynced=${s.isSynced} dust=${dust.toString()}`;
         if (summary !== lastState) {
-          console.log(`[wallet:sync] ${summary}`);
+          if (dotCount > 0) { process.stdout.write('\n'); dotCount = 0; }
+          console.log(`[wallet:sync] ${summary} (${elapsed}s elapsed)`);
           lastState = summary;
         } else {
           process.stdout.write('.');
+          dotCount++;
+          if (dotCount % 60 === 0) {
+            process.stdout.write(` ${elapsed}s\n`);
+          }
         }
       }),
       Rx.filter((s: any) => s.isSynced),
-      Rx.timeout(600000),
     )
   ).catch((e: any) => {
-    console.error('[wallet:sync] timed out or failed:', e?.message ?? e);
+    console.error('[wallet:sync] failed:', e?.message ?? e);
     throw e;
   });
   const syncedState = await _walletCtx.wallet.waitForSyncedState();

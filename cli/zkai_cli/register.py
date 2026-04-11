@@ -71,32 +71,10 @@ def register(
                 default="http://localhost:8080",
             )
 
-    console.print(f"\n[bold]Registering on Midnight chain...[/bold]")
+    console.print(f"\n[bold]Registering...[/bold]")
     console.print(f"  endpoint: {endpoint}")
     console.print(f"  model:    {model}")
     console.print(f"  price:    {price} tNIGHT/req")
-
-    # Call bridge register endpoint
-    pubkey_padded = pubkey.zfill(64)  # ensure 32 bytes (64 hex chars)
-    resp = requests.post(
-        f"{_BRIDGE_URL}/registry/register-provider",
-        json={
-            "provider_id": provider_id,
-            "pubkey": pubkey_padded,
-            "endpoint": endpoint,
-            "model": model,
-            "price": str(price),
-        },
-        timeout=120,
-    )
-
-    if not resp.ok:
-        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-        err_console.print(f"[red]Registration failed:[/red] {data.get('error', resp.text)}")
-        raise typer.Exit(1)
-
-    result = resp.json()
-    tx_id = result.get("tx_id", "submitted")
 
     # Fetch hardware info from enclave
     hardware = None
@@ -107,7 +85,8 @@ def register(
     except Exception:
         pass
 
-    # Register in central DB so Vercel gateway can discover this provider
+    # Register in central DB first — this is what actually routes traffic
+    tx_id = "pending"
     if auth_url:
         try:
             r = requests.post(
@@ -121,6 +100,29 @@ def register(
                 console.print(f"  [yellow]Warning: gateway DB registration failed: {r.text[:80]}[/yellow]")
         except Exception as e:
             console.print(f"  [yellow]Warning: could not reach gateway ({e})[/yellow]")
+
+    # Submit on-chain tx in background (non-blocking)
+    console.print("  Submitting on-chain tx (background)...")
+    pubkey_padded = pubkey.zfill(64)
+    try:
+        resp = requests.post(
+            f"{_BRIDGE_URL}/registry/register-provider",
+            json={
+                "provider_id": provider_id,
+                "pubkey": pubkey_padded,
+                "endpoint": endpoint,
+                "model": model,
+                "price": str(price),
+            },
+            timeout=300,
+        )
+        if resp.ok:
+            tx_id = resp.json().get("tx_id", "submitted")
+            console.print("  [green]On-chain tx submitted[/green]")
+        else:
+            console.print(f"  [yellow]On-chain tx failed (gateway registration still active): {resp.text[:80]}[/yellow]")
+    except Exception as e:
+        console.print(f"  [yellow]On-chain tx timed out (gateway registration still active)[/yellow]")
 
     # Save provider_id locally
     pid_file = compose_dir(repo) / _PROVIDER_ID_FILE

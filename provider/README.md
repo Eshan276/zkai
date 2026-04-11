@@ -38,55 +38,29 @@ zkai --help
 
 ---
 
-## Step 2 — Generate a wallet seed
+## Step 2 — Initialize
 
 ```bash
-zkai keygen
+zkai init
 ```
 
-Copy the 64-char hex seed it prints. You'll need it in the next step.
+This single command:
+- Fetches relay URL and secret from the ZKai gateway
+- Generates a new Midnight wallet (seed)
+- Writes `deploy/.seed`, `deploy/.bridge-seed`, and `provider/.env` with all required config
+
+> If Node.js is not installed locally, `zkai init` runs keygen inside Docker automatically.
 
 ---
 
-## Step 3 — Create config files
-
-### `deploy/.seed`
-```bash
-echo "YOUR_64_CHAR_HEX_SEED" > deploy/.seed
-chmod 600 deploy/.seed
-```
-
-### `deploy/.bridge-seed`
-Generate a second seed for the bridge (can be the same or different):
-```bash
-echo "YOUR_64_CHAR_HEX_SEED" > deploy/.bridge-seed
-chmod 600 deploy/.bridge-seed
-```
-
-### `provider/.env`
-```bash
-cat > provider/.env << 'EOF'
-ZKAI_AUTH_URL=https://zkai.vercel.app
-ZKAI_RELAY_URL=https://zkai-relay.fly.dev
-ZKAI_RELAY_SECRET=b4c2419dc381952ec1f067d1f744b284867cc4e77344ae27ec2e8bdcfcd6406e
-ZKAI_PRICE_PER_REQUEST=100
-OLLAMA_MODEL=qwen2.5:1.5b
-MAX_TOKENS=512
-EOF
-```
-
-> `ZKAI_RELAY_SECRET` is the shared secret for the relay — get the current value from the project maintainer or set your own if you're running your own relay.
-
----
-
-## Step 4 — Fund your wallet
+## Step 3 — Fund your wallet
 
 Your bridge wallet needs **tNIGHT** (Midnight preprod testnet tokens) for gas.
 
-1. Get your wallet address — start the bridge briefly and check its logs:
+1. Start the bridge briefly to get your wallet address:
    ```bash
    zkai start
-   zkai logs bridge | grep "Address:"
+   zkai logs bridge | grep Address
    ```
    Output: `Address: mn_addr_preprod1...`
 
@@ -95,11 +69,11 @@ Your bridge wallet needs **tNIGHT** (Midnight preprod testnet tokens) for gas.
 
 3. Wait ~2 min for tokens to arrive.
 
-> You need ~5 tNIGHT for gas. DUST (gas token) is auto-generated from tNIGHT — takes 5–10 min on first boot.
+> You need ~5 tNIGHT for gas. DUST (Midnight's gas token) is auto-generated from tNIGHT — takes 5–10 min on first boot.
 
 ---
 
-## Step 5 — Start the node
+## Step 4 — Start the node
 
 ```bash
 zkai start
@@ -132,7 +106,7 @@ Wallet synced.
 
 ---
 
-## Step 6 — Register on-chain
+## Step 5 — Register on-chain
 
 ```bash
 zkai register --model qwen2.5:1.5b --price 100
@@ -141,8 +115,8 @@ zkai register --model qwen2.5:1.5b --price 100
 This:
 - Fetches your enclave's TEE pubkey
 - Auto-sets your endpoint to `https://zkai-relay.fly.dev/relay/<provider_id>`
-- Submits `registerProvider` to the Midnight ProviderRegistry contract
-- Registers in the ZKai gateway DB so consumers can discover you
+- Registers in the ZKai gateway DB so consumers can discover you immediately
+- Submits `registerProvider` to the Midnight ProviderRegistry contract (background)
 
 Output:
 ```
@@ -154,7 +128,7 @@ Provider registered!
 
 ---
 
-## Step 7 — Verify
+## Step 6 — Verify
 
 ```bash
 zkai status
@@ -183,13 +157,13 @@ curl -X POST https://zkai.vercel.app/api/v1/chat/completions \
 
 ## Configuration reference
 
-`provider/.env`:
+`provider/.env` (written by `zkai init`, edit to customise):
 
 | Variable | Default | Description |
 |---|---|---|
 | `ZKAI_AUTH_URL` | `https://zkai.vercel.app` | Central gateway |
 | `ZKAI_RELAY_URL` | `https://zkai-relay.fly.dev` | Fly.io WebSocket relay |
-| `ZKAI_RELAY_SECRET` | — | Shared secret for relay auth |
+| `ZKAI_RELAY_SECRET` | — | Shared secret for relay auth (fetched automatically) |
 | `ZKAI_PRICE_PER_REQUEST` | `100` | tNIGHT charged per inference |
 | `OLLAMA_MODEL` | `qwen2.5:1.5b` | Model to run |
 | `MAX_TOKENS` | `512` | Max tokens per response |
@@ -212,8 +186,8 @@ Browse models: [ollama.com/library](https://ollama.com/library)
 ## Stopping / deregistering
 
 ```bash
-zkai stop          # stop containers (stays registered on-chain)
-zkai deregister    # remove from registry
+zkai stop          # stop containers (stays registered)
+zkai deregister    # remove from registry and gateway
 ```
 
 ---

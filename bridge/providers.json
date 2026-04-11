@@ -52,5 +52,32 @@
     "reputation": 0.5,
     "active": true,
     "registered_at": "2026-04-04T04:27:30.688Z"
+  },
+  {
+    "id": "bce72e99dafc0adaa747b721aa42b0759f755cf379ffd183136722c7d98b9da2",
+    "endpoint": "https://zkai-relay.fly.dev/relay/bce72e99dafc0adaa747b721aa42b0759f755cf379ffd183136722c7d98b9da2",
+    "model": "qwen2.5:1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": false,
+    "registered_at": "2026-04-04T06:41:06.396Z"
+  },
+  {
+    "id": "f1e008accd46b190f018ce890a7646ca453294ab12718f419bd7a81f2ef759a5",
+    "endpoint": "https://zkai-relay.fly.dev/relay/f1e008accd46b190f018ce890a7646ca453294ab12718f419bd7a81f2ef759a5",
+    "model": "qwen2.5:1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": true,
+    "registered_at": "2026-04-09T01:58:30.145Z"
+  },
+  {
+    "id": "f9eaec2547b3bc7b1e2aec52275582d49ee1d05b05831e67c55882925e47e001",
+    "endpoint": "https://zkai-relay.fly.dev/relay/f9eaec2547b3bc7b1e2aec52275582d49ee1d05b05831e67c55882925e47e001",
+    "model": "qwen2.5:1.5b",
+    "price": 100,
+    "reputation": 0.5,
+    "active": false,
+    "registered_at": "2026-04-09T01:59:18.823Z"
   }
 ]
