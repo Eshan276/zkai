@@ -7,6 +7,8 @@ import {
   fetchJobPerformanceStats,
   fetchORPerformanceStats,
   fetchORBenchmarks,
+  fetchORAppsActivity,
+  fetchORUptime,
   resolveORPermaslug,
   matchAAModel,
   deriveCategory,
@@ -40,12 +42,14 @@ export async function GET(
 
     const permaslug = resolveORPermaslug(slug, orModels);
 
-    const [dbProviders, hourlyStats, jobPerfStats, orPerfStats, orBenchmarkData] = await Promise.all([
+    const [dbProviders, hourlyStats, jobPerfStats, orPerfStats, orBenchmarkData, orAppsActivityData, orUptimeData] = await Promise.all([
       fetchProvidersForModel(slug),
       fetchHourlyJobStats(slug),
       fetchJobPerformanceStats(slug),
       fetchORPerformanceStats(permaslug),
       fetchORBenchmarks(slug),
+      fetchORAppsActivity(permaslug),
+      fetchORUptime(permaslug),
     ]);
 
     const aaModel = matchAAModel(aaModels, orModel);
@@ -352,6 +356,12 @@ export async function GET(
       orBenchmarkData.aaBenchmarks.length > 0 ||
       orBenchmarkData.designArena.length > 0;
 
+    const hasORAppsActivity =
+      orAppsActivityData.activitySeries.length > 0 ||
+      orAppsActivityData.topApps.length > 0;
+
+    const hasORUptime = orUptimeData.providers.length > 0 || Boolean(orUptimeData.uptimeGraphUrl);
+
     const viewModel: ModelDetailViewModel = {
       hero,
       price,
@@ -376,6 +386,22 @@ export async function GET(
           aaBenchmarks: orBenchmarkData.aaBenchmarks,
           designArena: orBenchmarkData.designArena,
           ...(orBenchmarkData.eloBounds && { eloBounds: orBenchmarkData.eloBounds }),
+        },
+      }),
+      ...(hasORAppsActivity && {
+        orAppsActivity: {
+          slug,
+          activitySeries: orAppsActivityData.activitySeries,
+          topApps: orAppsActivityData.topApps,
+        },
+      }),
+      ...(hasORUptime && {
+        orUptime: {
+          slug,
+          providers: orUptimeData.providers,
+          ...(orUptimeData.uptimeGraphUrl && { uptimeGraphUrl: orUptimeData.uptimeGraphUrl }),
+          ...(orUptimeData.comparisonGraphUrl && { comparisonGraphUrl: orUptimeData.comparisonGraphUrl }),
+          ...(orUptimeData.finishReasonGraphUrl && { finishReasonGraphUrl: orUptimeData.finishReasonGraphUrl }),
         },
       }),
       hasRealData: {
