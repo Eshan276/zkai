@@ -904,7 +904,7 @@
 // ── NEW DASHBOARD (OpenRouter-style layout, ZKai theme) ────────────────────────
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ElementType } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -1939,7 +1939,7 @@ function DashSidebar({ active, setActive }: { active: DashSection; setActive: (s
 
 // ── Main export ────────────────────────────────────────────────────────────────
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const searchParams = useSearchParams();
   const [section, setSection] = useState<DashSection>(() => {
     const requestedSection = searchParams.get('section');
@@ -1993,5 +1993,29 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function DashboardPageFallback() {
+  const fontVars = {
+    '--font-sans': "'Geist', 'Geist Fallback'",
+    '--font-mono': "'Geist Mono', 'Geist Mono Fallback'",
+  } as CSSProperties;
+
+  return (
+    <main className="dark relative min-h-screen overflow-hidden bg-black font-sans text-white" style={fontVars}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_10%,rgba(165,243,208,0.12)_0%,transparent_30%),radial-gradient(circle_at_88%_12%,rgba(255,158,141,0.1)_0%,transparent_32%),radial-gradient(circle_at_54%_100%,rgba(179,157,219,0.1)_0%,transparent_42%)]" />
+      <div className="relative z-10 flex min-h-screen items-center justify-center pt-20">
+        <p className="text-sm text-white/40">Loading…</p>
+      </div>
+    </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardPageFallback />}>
+      <DashboardPageContent />
+    </Suspense>
   );
 }
