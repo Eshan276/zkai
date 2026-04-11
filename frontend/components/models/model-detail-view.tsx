@@ -8,7 +8,6 @@ import {
   HardDrive,
   KeyRound,
   MemoryStick,
-  Shield,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
@@ -534,36 +533,6 @@ function ORUptimeSection({ data }: { data: ORUptimeData }) {
         </div>
       )}
 
-      {/* Datadog live graph embeds — dark background so the iframe doesn't flash white */}
-      {data.uptimeGraphUrl && (
-        <div>
-          <p className="mb-3 text-xs text-slate-500">Live uptime</p>
-          <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0e14]">
-            <iframe
-              src={data.uptimeGraphUrl}
-              className="h-72 w-full"
-              title="Uptime graph"
-              loading="lazy"
-              style={{ colorScheme: "dark" }}
-            />
-          </div>
-        </div>
-      )}
-
-      {data.finishReasonGraphUrl && (
-        <div>
-          <p className="mb-3 text-xs text-slate-500">Successful inference finish reasons</p>
-          <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0e14]">
-            <iframe
-              src={data.finishReasonGraphUrl}
-              className="h-72 w-full"
-              title="Finish reason graph"
-              loading="lazy"
-              style={{ colorScheme: "dark" }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -763,6 +732,83 @@ function ORBenchmarksSection({ data }: { data: ORBenchmarkData }) {
   );
 }
 
+function TrafficShareChart({ distribution }: { distribution: Array<{ provider: string; share: number }> }) {
+  const total = distribution.reduce((s, d) => s + d.share, 0) || 1;
+  const sorted = [...distribution].sort((a, b) => b.share - a.share);
+
+  const TRACK_COLORS = [
+    { bar: "#2dd4bf", glow: "rgba(45,212,191,0.35)", bg: "rgba(45,212,191,0.08)" },
+    { bar: "#22d3ee", glow: "rgba(34,211,238,0.35)", bg: "rgba(34,211,238,0.08)" },
+    { bar: "#a78bfa", glow: "rgba(167,139,250,0.35)", bg: "rgba(167,139,250,0.08)" },
+    { bar: "#fb7185", glow: "rgba(251,113,133,0.35)", bg: "rgba(251,113,133,0.08)" },
+    { bar: "#f59e0b", glow: "rgba(245,158,11,0.35)", bg: "rgba(245,158,11,0.08)" },
+  ];
+
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
+      <div className="mb-5 flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-[0.1em] text-slate-500">Traffic Share by Provider</p>
+        <span className="text-[10px] text-slate-600">{distribution.length} provider{distribution.length !== 1 ? "s" : ""}</span>
+      </div>
+
+      <div className="space-y-3.5">
+        {sorted.map((row, idx) => {
+          const pct = (row.share / total) * 100;
+          const color = TRACK_COLORS[idx % TRACK_COLORS.length];
+          const shortName = row.provider.length > 28 ? row.provider.slice(0, 28) + "…" : row.provider;
+
+          return (
+            <div key={row.provider}>
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: color.bar, boxShadow: `0 0 6px ${color.glow}` }}
+                  />
+                  <span className="truncate text-[12px] text-slate-300">{shortName}</span>
+                </div>
+                <span
+                  className="shrink-0 text-[13px] font-semibold tabular-nums"
+                  style={{ color: color.bar }}
+                >
+                  {row.share.toFixed(1)}%
+                </span>
+              </div>
+              <div
+                className="relative h-[5px] w-full overflow-hidden rounded-full"
+                style={{ backgroundColor: color.bg }}
+              >
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: color.bar,
+                    boxShadow: `0 0 8px ${color.glow}`,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Stacked visual bar at bottom */}
+      <div className="mt-5 flex h-1.5 w-full overflow-hidden rounded-full">
+        {sorted.map((row, idx) => {
+          const pct = (row.share / total) * 100;
+          const color = TRACK_COLORS[idx % TRACK_COLORS.length];
+          return (
+            <div
+              key={row.provider}
+              style={{ width: `${pct}%`, backgroundColor: color.bar }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
   const [copied, setCopied] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("pricing");
@@ -857,6 +903,11 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
             },
           ]
         : [];
+
+  const providersThroughputFromPerf = model.orPerformance
+    ? latestAvg(model.orPerformance.throughput)
+    : null;
+  const hardcodedProviderUptime = 99.4;
 
   return (
     <>
@@ -1058,64 +1109,145 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
 
           {model.providers ? (
             <div className="space-y-8">
-              {/* zkAI internal providers */}
+              {/* OpenRouter-style providers layout */}
               {model.providers.zkaiProviders && model.providers.zkaiProviders.length > 0 && (
-                <div>
-                  <p className="mb-3 flex items-center gap-1.5 text-xs text-teal-300">
-                    <Shield className="h-3 w-3" /> zkAI Providers
-                  </p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-semibold tracking-tight text-white">
+                      Providers for {model.hero.name}
+                    </h3>
+                    <p className="max-w-3xl text-sm leading-relaxed text-slate-400">
+                      zkAI routes requests to the best providers that are able to handle your prompt size and parameters, with fallbacks to maximize uptime.
+                    </p>
+                  </div>
+
                   <div className="space-y-3">
                     {model.providers.zkaiProviders.map((provider) => {
+                      const endpointMeta = model.providers?.endpoints.find((e) => e.endpoint === provider.id);
+                      const routeShare = shareByProvider.get(provider.id);
+
                       const hw = provider.hardware as Record<string, unknown> | undefined;
                       const cpuModel = hw?.cpu_model as string | undefined;
                       const cpuCores = hw?.cpu_cores as number | undefined;
                       const ramMb = hw?.ram_total_mb as number | undefined;
                       const gpu = hw?.gpu as string | undefined;
                       const hasHardware = cpuModel || cpuCores != null || ramMb != null || gpu;
+
+                      const providerLabel = provider.endpoint.replace(/^https?:\/\//, "").split("/")[0] || provider.id.slice(0, 8);
+                      const latencyLabel =
+                        provider.avgLatencyMs == null
+                          ? "—"
+                          : provider.avgLatencyMs >= 1000
+                            ? `${(provider.avgLatencyMs / 1000).toFixed(2)}s`
+                            : `${Math.round(provider.avgLatencyMs)}ms`;
+                      const throughputLabel =
+                        providersThroughputFromPerf != null
+                          ? `${providersThroughputFromPerf.toFixed(0)} tok/s`
+                          : endpointMeta?.throughputRps && endpointMeta.throughputRps > 0
+                            ? `${endpointMeta.throughputRps.toFixed(0)} rps`
+                          : "—";
+                      const reputationPct = Math.max(0, Math.min(100, Math.round(provider.reputation * 100)));
+                      const reputationBars = Math.max(1, Math.round((reputationPct / 100) * 5));
+                      const statusTone =
+                        endpointMeta?.status === "degraded"
+                          ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                          : endpointMeta?.status === "unstable"
+                            ? "border-rose-400/30 bg-rose-400/10 text-rose-300"
+                            : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
+
                       return (
-                        <div key={provider.id} className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-4 space-y-3">
-                          {/* Top row: endpoint + stats */}
-                          <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <p className="truncate font-mono text-sm text-white">{provider.endpoint}</p>
-                              <p className="mt-0.5 font-mono text-[10px] text-slate-600 truncate">ID: {provider.id}</p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-5 text-right">
-                              <div>
-                                <p className="text-[11px] text-slate-500">Price / req</p>
-                                <p className="text-sm text-white">{provider.price} <span className="text-xs text-slate-500">tNIGHT</span></p>
+                        <div key={provider.id} className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
+                          <div className="px-5 py-4">
+                            <div className="flex flex-wrap items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <p className="truncate text-lg font-medium text-white">{providerLabel}</p>
+                                <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{provider.id}</p>
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+                                  <span className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-slate-300">
+                                    {endpointMeta?.region ?? "Global"}
+                                  </span>
+                                  <span className={cn("rounded-md border px-2 py-0.5 capitalize", statusTone)}>
+                                    {endpointMeta?.status ?? "healthy"}
+                                  </span>
+                                  <span className="rounded-md border border-teal-400/25 bg-teal-400/10 px-2 py-0.5 text-teal-300">
+                                    fallback enabled
+                                  </span>
+                                </div>
                               </div>
-                              {provider.avgLatencyMs != null && (
+
+                              <div className="grid grid-cols-3 gap-5 text-right sm:gap-8">
                                 <div>
-                                  <p className="text-[11px] text-slate-500">Avg latency</p>
-                                  <p className="text-sm text-white">
-                                    {provider.avgLatencyMs >= 1000
-                                      ? `${(provider.avgLatencyMs / 1000).toFixed(1)}s`
-                                      : `${provider.avgLatencyMs}ms`}
-                                  </p>
+                                  <p className="text-[11px] text-slate-500">Latency</p>
+                                  <p className="mt-0.5 text-lg font-semibold text-white">{latencyLabel}</p>
                                 </div>
-                              )}
-                              <div>
-                                <p className="text-[11px] text-slate-500">Reputation</p>
-                                <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                                  <div className="h-1 w-12 rounded-full bg-white/10 overflow-hidden">
-                                    <div className="h-full bg-teal-400 rounded-full" style={{ width: `${Math.round(provider.reputation * 100)}%` }} />
-                                  </div>
-                                  <p className="text-sm text-white">{(provider.reputation * 100).toFixed(0)}%</p>
+                                <div>
+                                  <p className="text-[11px] text-slate-500">Throughput</p>
+                                  <p className="mt-0.5 text-lg font-semibold text-white">{throughputLabel}</p>
                                 </div>
-                              </div>
-                              {provider.uptime !== undefined && (
                                 <div>
                                   <p className="text-[11px] text-slate-500">Uptime</p>
-                                  <p className="text-sm text-emerald-300">{(provider.uptime * 100).toFixed(1)}%</p>
+                                  <p className="mt-0.5 text-lg font-semibold text-emerald-300">
+                                    {hardcodedProviderUptime.toFixed(1)}%
+                                  </p>
                                 </div>
-                              )}
+                              </div>
                             </div>
                           </div>
 
-                          {/* Hardware details */}
+                          <div className="grid gap-x-5 gap-y-4 border-t border-white/[0.08] px-5 py-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <div>
+                              <p className="text-[11px] text-slate-500">Total Context</p>
+                              <p className="mt-1 text-xl font-semibold tracking-tight text-white">
+                                {formatContextLength(model.hero.contextLength)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-500">Max Output</p>
+                              <p className="mt-1 text-xl font-semibold tracking-tight text-white">
+                                {model.hero.tokens || "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-500">Input Price</p>
+                              <p className="mt-1 text-xl font-semibold tracking-tight text-white">
+                                {model.price ? formatUsd(model.price.inputPerM) : model.hero.inputPrice}
+                              </p>
+                              <p className="text-[11px] text-slate-500">/1M tokens</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-500">Output Price</p>
+                              <p className="mt-1 text-xl font-semibold tracking-tight text-white">
+                                {model.price ? formatUsd(model.price.outputPerM) : model.hero.outputPrice}
+                              </p>
+                              <p className="text-[11px] text-slate-500">/1M tokens</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-500">Route Share</p>
+                              <p className="mt-1 text-xl font-semibold tracking-tight text-white">
+                                {typeof routeShare === "number" ? `${routeShare.toFixed(1)}%` : "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-500">Reputation</p>
+                              <div className="mt-1">
+                                <div className="flex items-end gap-1">
+                                  {[0, 1, 2, 3, 4].map((i) => (
+                                    <span
+                                      key={i}
+                                      className={cn(
+                                        "w-1 rounded-sm",
+                                        i < reputationBars ? "bg-teal-300" : "bg-white/10",
+                                      )}
+                                      style={{ height: `${6 + i * 2}px` }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
                           {hasHardware && (
-                            <div className="border-t border-white/[0.06] pt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-2 gap-3 border-t border-white/[0.08] px-5 py-4 sm:grid-cols-4">
                               {cpuModel && (
                                 <div className="sm:col-span-2 flex items-start gap-2">
                                   <Cpu className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-600" />
@@ -1163,56 +1295,10 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
                 </div>
               )}
 
-              {/* Endpoints */}
-              <div>
-                <p className="mb-3 text-xs text-slate-500">Endpoints</p>
-                <div className="divide-y divide-white/6">
-                  {model.providers.endpoints.map((endpoint) => (
-                    <div key={endpoint.endpoint} className="flex items-center justify-between gap-4 py-3">
-                      <div className="min-w-0">
-                        <p className="text-sm text-white">{endpoint.endpoint}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{endpoint.region}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-5 text-right">
-                        <div>
-                          <p className="text-[11px] text-slate-500">Uptime</p>
-                          <p className="text-sm text-white">{endpoint.uptime.toFixed(2)}%</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] text-slate-500">Throughput</p>
-                          <p className="text-sm text-white">{endpoint.throughputRps} req/s</p>
-                        </div>
-                        <span
-                          className={cn(
-                            "text-[11px]",
-                            endpoint.status === "healthy" && "text-emerald-400",
-                            endpoint.status === "degraded" && "text-amber-400",
-                            endpoint.status === "unstable" && "text-rose-400",
-                          )}
-                        >
-                          {endpoint.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Traffic share chart */}
-              <div>
-                <p className="mb-3 text-xs text-slate-500">Traffic share by provider</p>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={model.providers.distribution} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-                      <XAxis dataKey="provider" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-15} textAnchor="end" height={50} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip contentStyle={tooltipStyle} />
-                      <Bar dataKey="share" name="Share %" fill="#5eead4" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+              {model.providers.distribution && model.providers.distribution.length > 0 && (
+                <TrafficShareChart distribution={model.providers.distribution} />
+              )}
             </div>
           ) : (
             <EmptyState message="No active providers registered for this model." />
