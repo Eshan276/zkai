@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, Check, Copy, LogOut, Menu, Wallet, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { connectWallet, refreshWalletState, waitForExtension, type ConnectedAPI, type MidnightWalletState } from "@/lib/wallet";
 
 const navLinks = [
   { name: "Dashboard", href: "/dashboard" },
@@ -11,6 +12,118 @@ const navLinks = [
   { name: "Ranking", href: "/provider_dashboard" },
   { name: "Docs", href: "https://github.com/Eshan276/zkai" },
 ] as const;
+
+function NavWalletButton({ isScrolled, onClose }: { isScrolled: boolean; onClose?: () => void }) {
+  const [walletState, setWalletState] = useState<MidnightWalletState | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [hasExtension, setHasExtension] = useState<boolean | null>(null);
+  const apiRef = useRef<Awaited<ReturnType<typeof connectWallet>>["api"] | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    waitForExtension(3000).then((ext) => setHasExtension(!!ext));
+  }, []);
+
+  useEffect(() => {
+    if (!walletState || !apiRef.current) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const fresh = await refreshWalletState(apiRef.current!);
+        setWalletState(fresh);
+      } catch {}
+    }, 15_000);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [!!walletState]);
+
+  async function connect() {
+    setConnecting(true);
+    setError("");
+    try {
+      const { api, state } = await connectWallet();
+      apiRef.current = api;
+      setWalletState(state);
+      onClose?.();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  function disconnect() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    apiRef.current = null;
+    setWalletState(null);
+  }
+
+  function copyAddress() {
+    if (!walletState?.address) return;
+    navigator.clipboard.writeText(walletState.address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  if (walletState) {
+    const short = `${walletState.address.slice(0, 8)}…${walletState.address.slice(-4)}`;
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={copyAddress}
+          className={`flex items-center gap-2 rounded-full border border-white/20 bg-white/10 font-semibold text-white transition-all duration-500 hover:bg-white/20 ${
+            isScrolled ? "h-10 px-4 text-sm" : "h-12 px-5 text-sm"
+          }`}
+        >
+          <div className="h-2 w-2 rounded-full bg-green-400" />
+          <span className="font-mono">{short}</span>
+          {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 opacity-50" />}
+        </button>
+        <button
+          onClick={disconnect}
+          className="p-2 text-white/40 transition-colors hover:text-white/80"
+          title="Disconnect"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+
+  if (hasExtension === false) {
+    return (
+      <a
+        href="https://chrome.google.com/webstore/search/midnight%20lace"
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`flex items-center gap-2 rounded-full border border-yellow-500/30 bg-yellow-500/10 font-semibold text-yellow-300 transition-all duration-500 hover:bg-yellow-500/20 ${
+          isScrolled ? "h-10 px-5 text-sm" : "h-12 px-7 text-sm"
+        }`}
+      >
+        <AlertTriangle className="h-4 w-4" />
+        Install Lace
+      </a>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        onClick={connect}
+        disabled={connecting || hasExtension === null}
+        className={`rounded-full bg-white font-semibold text-black transition-all duration-500 hover:bg-white/90 disabled:opacity-50 ${
+          isScrolled ? "h-10 px-5 text-sm" : "h-12 px-7 text-sm"
+        }`}
+      >
+        <Wallet className="h-4 w-4" />
+        {connecting ? "Connecting…" : "Connect Wallet"}
+      </Button>
+      {error && <div className="max-w-48 text-right text-xs text-red-400">{error}</div>}
+    </div>
+  );
+}
 
 export function Navigation({ forceTransparent = false }: { forceTransparent?: boolean }) {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -85,13 +198,7 @@ export function Navigation({ forceTransparent = false }: { forceTransparent?: bo
           </div>
 
           <div className="hidden items-center md:flex">
-            <Button
-              className={`rounded-full bg-white font-semibold text-black transition-all duration-500 hover:bg-white/90 ${
-                isScrolled ? "h-10 px-5 text-sm" : "h-12 px-7 text-sm"
-              }`}
-            >
-              Sign up
-            </Button>
+            <NavWalletButton isScrolled={isScrolled} />
           </div>
 
           <button
@@ -134,12 +241,9 @@ export function Navigation({ forceTransparent = false }: { forceTransparent?: bo
             }`}
             style={{ transitionDelay: isMobileMenuOpen ? "300ms" : "0ms" }}
           >
-            <Button
-              className="h-16 w-full rounded-full bg-white text-base font-semibold text-black hover:bg-white/90"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Sign up
-            </Button>
+            <div className="w-full">
+              <NavWalletButton isScrolled={false} onClose={() => setIsMobileMenuOpen(false)} />
+            </div>
           </div>
         </div>
       </div>
