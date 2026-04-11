@@ -6,6 +6,11 @@ import { AlertTriangle, Check, Copy, LogOut, Menu, Wallet, X } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { connectWallet, refreshWalletState, waitForExtension, type ConnectedAPI, type MidnightWalletState } from "@/lib/wallet";
 
+type NavWalletCallbacks = {
+  onWalletChange?: (address: string | null) => void;
+  onApiChange?: (api: ConnectedAPI | null) => void;
+};
+
 const navLinks = [
   { name: "Dashboard", href: "/dashboard" },
   { name: "Models", href: "/model" },
@@ -13,7 +18,15 @@ const navLinks = [
   { name: "Docs", href: "https://github.com/Eshan276/zkai" },
 ] as const;
 
-function NavWalletButton({ isScrolled, onClose }: { isScrolled: boolean; onClose?: () => void }) {
+function NavWalletButton({
+  isScrolled,
+  onClose,
+  onWalletChange,
+  onApiChange,
+}: {
+  isScrolled: boolean;
+  onClose?: () => void;
+} & NavWalletCallbacks) {
   const [walletState, setWalletState] = useState<MidnightWalletState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -46,6 +59,8 @@ function NavWalletButton({ isScrolled, onClose }: { isScrolled: boolean; onClose
       const { api, state } = await connectWallet();
       apiRef.current = api;
       setWalletState(state);
+      onWalletChange?.(state.address);
+      onApiChange?.(api as unknown as ConnectedAPI);
       onClose?.();
     } catch (e: any) {
       setError(e.message);
@@ -58,6 +73,8 @@ function NavWalletButton({ isScrolled, onClose }: { isScrolled: boolean; onClose
     if (pollRef.current) clearInterval(pollRef.current);
     apiRef.current = null;
     setWalletState(null);
+    onWalletChange?.(null);
+    onApiChange?.(null);
   }
 
   function copyAddress() {
@@ -125,7 +142,11 @@ function NavWalletButton({ isScrolled, onClose }: { isScrolled: boolean; onClose
   );
 }
 
-export function Navigation({ forceTransparent = false }: { forceTransparent?: boolean }) {
+export function Navigation({
+  forceTransparent = false,
+  onWalletChange,
+  onApiChange,
+}: { forceTransparent?: boolean } & NavWalletCallbacks) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -198,7 +219,11 @@ export function Navigation({ forceTransparent = false }: { forceTransparent?: bo
           </div>
 
           <div className="hidden items-center md:flex">
-            <NavWalletButton isScrolled={isScrolled} />
+            <NavWalletButton
+              isScrolled={isScrolled}
+              onWalletChange={onWalletChange}
+              onApiChange={onApiChange}
+            />
           </div>
 
           <button
@@ -242,7 +267,12 @@ export function Navigation({ forceTransparent = false }: { forceTransparent?: bo
             style={{ transitionDelay: isMobileMenuOpen ? "300ms" : "0ms" }}
           >
             <div className="w-full">
-              <NavWalletButton isScrolled={false} onClose={() => setIsMobileMenuOpen(false)} />
+              <NavWalletButton
+                isScrolled={false}
+                onClose={() => setIsMobileMenuOpen(false)}
+                onWalletChange={onWalletChange}
+                onApiChange={onApiChange}
+              />
             </div>
           </div>
         </div>
