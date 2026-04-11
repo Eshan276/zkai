@@ -124,7 +124,7 @@ export async function startWallet(): Promise<WalletContext> {
   // Independent ticker — prints elapsed every 15s regardless of wallet events
   const ticker = setInterval(() => {
     const elapsed = Math.round((Date.now() - startMs) / 1000);
-    process.stdout.write(`\r[wallet:sync] still syncing... ${elapsed}s elapsed`);
+    console.log(`[wallet:sync] still syncing... ${elapsed}s elapsed`);
   }, 15000);
 
   await Rx.firstValueFrom(
