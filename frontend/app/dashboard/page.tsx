@@ -900,3 +900,945 @@
 //     </div>
 //   );
 // }
+
+// ── NEW DASHBOARD (OpenRouter-style layout, ZKai theme) ────────────────────────
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { CSSProperties, ElementType } from 'react';
+import {
+  Activity,
+  BarChart2,
+  Check,
+  CheckCircle,
+  ChevronRight,
+  Copy,
+  Cpu,
+  CreditCard,
+  Eye,
+  EyeOff,
+  FileText,
+  Key,
+  Layers,
+  Lock,
+  Plus,
+  Search,
+  Settings,
+  Shield,
+  Trash2,
+  Wallet,
+  XCircle,
+  Clock,
+} from 'lucide-react';
+import { Navigation } from '@/components/navigation';
+import { cn } from '@/lib/utils';
+import type { ConnectedAPI } from '@/lib/wallet';
+import { callEscrow } from '@/lib/escrow';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type DashSection =
+  | 'api-keys'
+  | 'guardrails'
+  | 'byok'
+  | 'routing'
+  | 'presets'
+  | 'plugins'
+  | 'observability'
+  | 'settings'
+  | 'activity'
+  | 'logs'
+  | 'credits'
+  | 'management-keys'
+  | 'preferences';
+
+interface SidebarItem {
+  id: DashSection;
+  label: string;
+  icon: ElementType;
+  group: 'platform' | 'account';
+  locked?: boolean;
+}
+
+const SIDEBAR_ITEMS: SidebarItem[] = [
+  { id: 'api-keys',        label: 'API Keys',        icon: Key,        group: 'platform' },
+  { id: 'guardrails',      label: 'Guardrails',      icon: Shield,     group: 'platform', locked: true },
+  { id: 'byok',            label: 'BYOK',            icon: Cpu,        group: 'platform', locked: true },
+  { id: 'routing',         label: 'Routing',         icon: Layers,     group: 'platform', locked: true },
+  { id: 'presets',         label: 'Presets',         icon: BarChart2,  group: 'platform', locked: true },
+  { id: 'plugins',         label: 'Plugins',         icon: Layers,     group: 'platform', locked: true },
+  { id: 'observability',   label: 'Observability',   icon: Eye,        group: 'platform', locked: true },
+  { id: 'settings',        label: 'Settings',        icon: Settings,   group: 'platform', locked: true },
+  { id: 'activity',        label: 'Activity',        icon: Activity,   group: 'account' },
+  { id: 'logs',            label: 'Logs',            icon: FileText,   group: 'account' },
+  { id: 'credits',         label: 'Credits',         icon: CreditCard, group: 'account' },
+  { id: 'management-keys', label: 'Management Keys', icon: Lock,       group: 'account', locked: true },
+  { id: 'preferences',     label: 'Preferences',     icon: Settings,   group: 'account', locked: true },
+];
+
+// ── Data helpers (same sources as legacy dashboard: /api/auth/me, /api/jobs, /api/escrow/balance) ──
+
+interface ApiKeyRow {
+  key: string;
+  created_at: string;
+  revoked: boolean;
+  label: string;
+}
+
+interface DashboardJob {
+  id: string;
+  provider_id: string;
+  amount: number;
+  model: string;
+  status: 0 | 1 | 2;
+  attestation_hash: string;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  duration_ms?: number | null;
+  created_at?: string | null;
+}
+
+function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '—';
+  const diff = Date.now() - t;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const d = Math.floor(hr / 24);
+  if (d < 30) return `${d} day${d === 1 ? '' : 's'} ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function formatLatencyMs(ms: number | null | undefined): string {
+  if (ms == null || ms < 0) return '—';
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${ms}ms`;
+}
+
+function jobTokens(j: DashboardJob): number {
+  return (j.prompt_tokens ?? 0) + (j.completion_tokens ?? 0);
+}
+
+function monthBounds() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { start, end };
+}
+
+function isInCurrentMonth(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const { start, end } = monthBounds();
+  return d >= start && d <= end;
+}
+
+// ── Shared badges ──────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: number }) {
+  const cfg: Record<number, { label: string; cls: string }> = {
+    0: { label: 'Pending',   cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
+    1: { label: 'Completed', cls: 'text-green-400  bg-green-500/10  border-green-500/20'  },
+    2: { label: 'Refunded',  cls: 'text-red-400    bg-red-500/10    border-red-500/20'    },
+  };
+  const { label, cls } = cfg[status] ?? { label: 'Unknown', cls: 'text-white/40 bg-white/5 border-white/10' };
+  return <span className={`text-xs border px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+}
+
+function HttpBadge({ code }: { code: number }) {
+  const ok = code >= 200 && code < 300;
+  return (
+    <span className={`text-xs font-mono px-2 py-0.5 rounded border ${ok ? 'text-green-400 bg-green-500/10 border-green-500/20' : 'text-red-400 bg-red-500/10 border-red-500/20'}`}>
+      {code}
+    </span>
+  );
+}
+
+// ── Section: API Keys ──────────────────────────────────────────────────────────
+
+function ApiKeysSection({
+  walletAddress,
+  connectedAPI,
+}: {
+  walletAddress: string | null;
+  connectedAPI: ConnectedAPI | null;
+}) {
+  const [rows, setRows] = useState<ApiKeyRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  const [issueError, setIssueError] = useState('');
+  const [search, setSearch] = useState('');
+  const [copied, setCopied] = useState('');
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+
+  const loadKeys = useCallback(async () => {
+    if (!walletAddress) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/auth/me?wallet=${encodeURIComponent(walletAddress)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRows((data.keys ?? []) as ApiKeyRow[]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [walletAddress]);
+
+  useEffect(() => {
+    loadKeys();
+  }, [loadKeys]);
+
+  function copyKey(key: string) {
+    navigator.clipboard.writeText(key).catch(() => {});
+    setCopied(key);
+    setTimeout(() => setCopied(''), 2000);
+  }
+
+  function toggleReveal(id: string) {
+    setRevealed(prev => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  async function revokeKey(key: string) {
+    if (!walletAddress) return;
+    await fetch('/api/auth/me', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, wallet_address: walletAddress }),
+    });
+    await loadKeys();
+  }
+
+  async function issueKey() {
+    if (!walletAddress) return;
+    setIssuing(true);
+    setIssueError('');
+    try {
+      const chalRes = await fetch('/api/auth/challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet_address: walletAddress }),
+      });
+      const { nonce } = await chalRes.json();
+
+      let coin_public_key: string | null = null;
+      if (connectedAPI) {
+        try {
+          const shielded = await connectedAPI.getShieldedAddresses();
+          coin_public_key = (shielded as { shieldedCoinPublicKey?: string }).shieldedCoinPublicKey ?? null;
+        } catch {
+          /* ignore */
+        }
+      }
+
+      const verRes = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet_address: walletAddress, nonce, coin_public_key }),
+      });
+      if (!verRes.ok) {
+        const e = await verRes.json();
+        throw new Error(e.error ?? 'Failed to issue key');
+      }
+      await loadKeys();
+    } catch (e: unknown) {
+      setIssueError(e instanceof Error ? e.message : 'Failed to issue key');
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  const activeKeys = rows.filter(k => !k.revoked);
+  const filtered = activeKeys.filter(k =>
+    (k.label || 'key').toLowerCase().includes(search.toLowerCase()),
+  );
+  const createDisabled = !walletAddress || issuing;
+
+  if (!walletAddress) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">API Keys</h1>
+          <p className="mt-1 text-sm text-white/40">Create and manage your API keys.</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-8 py-16 text-center">
+          <Wallet className="mx-auto h-8 w-8 text-white/20" />
+          <p className="mt-3 text-sm text-white/40">Connect your Midnight wallet in the header to view and create API keys.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold text-white">API Keys</h1>
+        <p className="mt-1 text-sm text-white/40">Create and manage your API keys.</p>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/[0.02]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+          <p className="text-sm text-white/50">Manage your keys to access all models</p>
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by name..."
+                className="w-full rounded-lg border border-white/10 bg-black/40 py-2 pl-8 pr-3 text-sm text-white placeholder:text-white/25 focus:border-violet-500/40 focus:outline-none"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => issueKey()}
+              disabled={createDisabled}
+              className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-70"
+            >
+              <Plus className="h-4 w-4" />
+              {issuing ? 'Creating…' : 'Create'}
+            </button>
+          </div>
+        </div>
+        {issueError && <p className="border-b border-white/10 px-4 py-2 text-xs text-red-400">{issueError}</p>}
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.01]">
+                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">
+                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-white/20 bg-black/50" />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Key</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Expires</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Last Used</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Usage</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Limit</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.06]">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-white/30">Loading keys…</td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-white/30">No keys found.</td>
+                </tr>
+              ) : filtered.map(k => (
+                <tr key={k.key} className="transition-colors hover:bg-white/[0.02]">
+                  <td className="px-4 py-3.5 align-top">
+                    <input type="checkbox" className="mt-1 h-3.5 w-3.5 rounded border-white/20 bg-black/50" />
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <div className="space-y-0.5">
+                      <p className="font-medium text-white/80">{k.label || '—'}</p>
+                      <p className="font-mono text-xs text-white/35">
+                        {revealed[k.key] ? k.key : `${k.key.slice(0, 16)}...${k.key.slice(-4)}`}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-white/45">—</td>
+                  <td className="px-4 py-3.5 text-xs text-white/45">—</td>
+                  <td className="px-4 py-3.5 text-xs font-medium text-white/70">—</td>
+                  <td className="px-4 py-3.5 text-xs text-white/60">
+                    <span>—</span>{' '}
+                    <span className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-white/40">
+                      MONTH
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleReveal(k.key)}
+                        className="rounded-md p-1.5 text-white/30 transition-colors hover:bg-white/5 hover:text-white/70"
+                        title={revealed[k.key] ? 'Hide key' : 'Reveal key'}
+                      >
+                        {revealed[k.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => copyKey(k.key)}
+                        className="rounded-md p-1.5 text-white/30 transition-colors hover:bg-white/5 hover:text-white/70"
+                        title="Copy key"
+                      >
+                        {copied === k.key ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => revokeKey(k.key)}
+                        className="rounded-md p-1.5 text-white/30 transition-colors hover:bg-red-950/30 hover:text-red-400"
+                        title="Revoke key"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Section: Activity ──────────────────────────────────────────────────────────
+
+function deriveJobUiStatus(j: DashboardJob): 0 | 1 | 2 {
+  const h = j.attestation_hash ?? '';
+  const noAttest = !h || /^0+$/.test(h.trim());
+  if (noAttest && jobTokens(j) === 0 && (j.duration_ms == null || j.duration_ms === 0)) return 0;
+  return 1;
+}
+
+function ActivitySection({ walletAddress }: { walletAddress: string | null }) {
+  const [filter, setFilter] = useState<-1 | 0 | 1 | 2>(-1);
+  const [jobs, setJobs] = useState<DashboardJob[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!walletAddress) return;
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setLoading(true);
+      try {
+        const r = await fetch(`/api/jobs?wallet=${encodeURIComponent(walletAddress)}`);
+        const data = r.ok ? await r.json() : [];
+        if (!cancelled) setJobs(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setJobs([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
+
+  const enriched = useMemo(() => {
+    const source = walletAddress ? jobs : [];
+    return source.map(j => ({ ...j, uiStatus: deriveJobUiStatus(j) }));
+  }, [walletAddress, jobs]);
+
+  const filtered =
+    filter === -1 ? enriched : enriched.filter(j => j.uiStatus === filter);
+
+  function StatusIcon({ status }: { status: number }) {
+    if (status === 1) return <CheckCircle className="w-4 h-4 text-green-400" />;
+    if (status === 2) return <XCircle className="w-4 h-4 text-red-400" />;
+    return <Clock className="w-4 h-4 text-yellow-400" />;
+  }
+
+  const totalTokens = enriched.reduce((s, j) => s + jobTokens(j), 0);
+  const completedCount = enriched.filter(j => j.uiStatus === 1).length;
+
+  if (!walletAddress) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Activity</h1>
+          <p className="mt-1 text-sm text-white/40">Your recent inference requests and outcomes.</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-8 py-16 text-center text-sm text-white/30">
+          Connect your wallet in the header to see inference activity for your account.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Activity</h1>
+        <p className="mt-1 text-sm text-white/40">Your recent inference requests and outcomes.</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {([
+          { label: 'Total Requests', value: loading ? '—' : enriched.length, icon: Layers },
+          { label: 'Completed', value: loading ? '—' : completedCount, icon: CheckCircle },
+          { label: 'Total Tokens', value: loading ? '—' : totalTokens.toLocaleString(), icon: BarChart2 },
+        ] as const).map(({ label, value, icon: Icon }) => (
+          <div key={label} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Icon className="h-4 w-4 text-violet-300" />
+              <span className="text-xs text-white/40">{label}</span>
+            </div>
+            <div className="text-2xl font-bold text-white">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="w-fit rounded-lg border border-white/10 bg-white/[0.02] p-1">
+        {([[-1, 'All'], [1, 'Completed'], [0, 'Pending'], [2, 'Refunded']] as const).map(([val, label]) => (
+          <button
+            key={val}
+            type="button"
+            onClick={() => setFilter(val)}
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors ${filter === val ? 'bg-white/10 text-white font-medium' : 'text-white/40 hover:text-white/70'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="border border-white/10 rounded-xl overflow-hidden divide-y divide-white/[0.06]">
+        {loading ? (
+          <div className="px-5 py-12 text-center text-sm text-white/30">Loading activity…</div>
+        ) : filtered.length === 0 ? (
+          <div className="px-5 py-12 text-center text-sm text-white/30">No jobs match this filter.</div>
+        ) : (
+          filtered.map(job => (
+            <div key={job.id} className="flex items-center justify-between px-5 py-4 hover:bg-white/[0.02] transition-colors">
+              <div className="flex items-center gap-3">
+                <StatusIcon status={job.uiStatus} />
+                <div>
+                  <div className="text-sm font-medium text-white/80">{job.model || '—'}</div>
+                  <div className="text-xs text-white/30 mt-0.5">{formatRelativeTime(job.created_at)}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs text-white/40 tabular-nums">{jobTokens(job).toLocaleString()} tokens</span>
+                <span className="text-xs text-white/50 tabular-nums">{job.amount.toLocaleString()} tNIGHT</span>
+                <StatusBadge status={job.uiStatus} />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Section: Logs ──────────────────────────────────────────────────────────────
+
+/** Gateway request logs derived from stored jobs (same /api/jobs feed as Activity). */
+function LogsSection({ walletAddress }: { walletAddress: string | null }) {
+  const [jobs, setJobs] = useState<DashboardJob[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!walletAddress) return;
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setLoading(true);
+      try {
+        const r = await fetch(`/api/jobs?wallet=${encodeURIComponent(walletAddress)}`);
+        const data = r.ok ? await r.json() : [];
+        if (!cancelled) setJobs(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setJobs([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
+
+  const logJobs = useMemo(() => (walletAddress ? jobs : []), [walletAddress, jobs]);
+
+  if (!walletAddress) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Logs</h1>
+          <p className="mt-1 text-sm text-white/40">Raw HTTP request logs for your API calls.</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-8 py-16 text-center text-sm text-white/30">
+          Connect your wallet in the header to see request logs from your API usage.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Logs</h1>
+        <p className="mt-1 text-sm text-white/40">Raw HTTP request logs for your API calls.</p>
+      </div>
+
+      <div className="border border-white/10 rounded-xl overflow-hidden">
+        <table className="w-full min-w-[700px] text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="text-left px-4 py-3 text-xs text-white/40 font-medium">Method</th>
+              <th className="text-left px-4 py-3 text-xs text-white/40 font-medium">Path</th>
+              <th className="text-left px-4 py-3 text-xs text-white/40 font-medium">Status</th>
+              <th className="text-left px-4 py-3 text-xs text-white/40 font-medium">Latency</th>
+              <th className="text-left px-4 py-3 text-xs text-white/40 font-medium">Time</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/[0.06]">
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-12 text-center text-sm text-white/30">Loading logs…</td>
+              </tr>
+            ) : logJobs.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-12 text-center text-sm text-white/30">No request logs yet.</td>
+              </tr>
+            ) : (
+              logJobs.map(job => {
+                const code =
+                  job.duration_ms != null || (job.completion_tokens ?? 0) > 0 ? 200 : 502;
+                return (
+                  <tr key={job.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3.5">
+                      <span className="font-mono text-xs text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded">
+                        POST
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-xs text-white/60">/v1/chat/completions</td>
+                    <td className="px-4 py-3.5"><HttpBadge code={code} /></td>
+                    <td className="px-4 py-3.5 text-xs text-white/40 tabular-nums">{formatLatencyMs(job.duration_ms)}</td>
+                    <td className="px-4 py-3.5 text-xs text-white/30">{formatRelativeTime(job.created_at)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Section: Credits ───────────────────────────────────────────────────────────
+
+function CreditsSection({
+  walletAddress,
+  connectedAPI,
+}: {
+  walletAddress: string | null;
+  connectedAPI: ConnectedAPI | null;
+}) {
+  const [escrowBalance, setEscrowBalance] = useState<string | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [depositStatus, setDepositStatus] = useState<'idle' | 'loading' | 'ok' | 'err'>('idle');
+  const [depositMsg, setDepositMsg] = useState('');
+  const [depositAmount, setDepositAmount] = useState('100');
+  const [jobs, setJobs] = useState<DashboardJob[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+
+  const fetchBalance = useCallback(async (api: ConnectedAPI) => {
+    setBalanceLoading(true);
+    try {
+      const shielded = await api.getShieldedAddresses();
+      const cpk = (shielded as { shieldedCoinPublicKey?: string }).shieldedCoinPublicKey;
+      if (!cpk) {
+        setEscrowBalance(null);
+        return;
+      }
+      const res = await fetch(`/api/escrow/balance?coinPublicKey=${encodeURIComponent(cpk)}`);
+      if (res.ok) {
+        const { balance } = await res.json();
+        setEscrowBalance(typeof balance === 'string' ? balance : String(balance));
+      }
+    } catch {
+      setEscrowBalance(null);
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (connectedAPI) fetchBalance(connectedAPI);
+    else setEscrowBalance(null);
+  }, [connectedAPI, fetchBalance]);
+
+  useEffect(() => {
+    if (!walletAddress) return;
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setJobsLoading(true);
+      try {
+        const r = await fetch(`/api/jobs?wallet=${encodeURIComponent(walletAddress)}`);
+        const data = r.ok ? await r.json() : [];
+        if (!cancelled) setJobs(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setJobs([]);
+      } finally {
+        if (!cancelled) setJobsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
+
+  const monthJobs = useMemo(() => {
+    const creditJobs = walletAddress ? jobs : [];
+    return creditJobs.filter(j => isInCurrentMonth(j.created_at));
+  }, [walletAddress, jobs]);
+  const totalSpent = monthJobs.reduce((s, j) => s + j.amount, 0);
+  const requestCount = monthJobs.length;
+  const avgPerCall = requestCount > 0 ? totalSpent / requestCount : 0;
+
+  async function handleDeposit() {
+    if (!connectedAPI) {
+      setDepositStatus('err');
+      setDepositMsg('Connect Lace and approve wallet access to deposit.');
+      return;
+    }
+    const n = Number(depositAmount);
+    if (!depositAmount.trim() || Number.isNaN(n) || n <= 0 || !Number.isFinite(n)) {
+      setDepositStatus('err');
+      setDepositMsg('Enter a valid tNIGHT amount (positive number).');
+      return;
+    }
+    setDepositStatus('loading');
+    setDepositMsg('Approve in Lace wallet…');
+    try {
+      await callEscrow(connectedAPI, 'deposit', BigInt(Math.floor(n)));
+      setDepositStatus('ok');
+      setDepositMsg('Deposited. Refreshing balance…');
+      setTimeout(() => fetchBalance(connectedAPI), 5000);
+    } catch (e: unknown) {
+      setDepositStatus('err');
+      setDepositMsg(e instanceof Error ? e.message : 'Deposit failed');
+    }
+  }
+
+  const displayBalance =
+    escrowBalance !== null ? (balanceLoading ? '…' : escrowBalance) : walletAddress ? '—' : '0';
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Credits</h1>
+        <p className="mt-1 text-sm text-white/40">Manage your tNIGHT escrow balance and spending.</p>
+      </div>
+
+      <div className="border border-violet-500/20 rounded-xl p-6 bg-violet-500/5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-violet-400" />
+            <span className="font-semibold text-white">Escrow Balance</span>
+          </div>
+          <span className="text-xs text-white/30">tNIGHT locked for inference</span>
+        </div>
+        <div className="text-4xl font-bold text-white mb-1">
+          {displayBalance}{' '}
+          <span className="text-lg font-normal text-white/40">tNIGHT</span>
+        </div>
+        <p className="text-xs text-white/30 mt-2">
+          {walletAddress
+            ? 'Deposit tNIGHT into the escrow contract to pay for inference. Balance is read from chain when Lace is connected.'
+            : 'Connect your Midnight wallet to deposit tNIGHT and enable inference payments.'}
+        </p>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            placeholder="Amount (tNIGHT)"
+            value={depositAmount}
+            onChange={e => setDepositAmount(e.target.value)}
+            disabled={!connectedAPI || depositStatus === 'loading'}
+            className="w-full min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-violet-500/50 focus:outline-none disabled:opacity-50 sm:max-w-xs"
+          />
+          <button
+            type="button"
+            onClick={() => handleDeposit()}
+            disabled={depositStatus === 'loading' || !connectedAPI}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            {depositStatus === 'loading' ? 'Depositing…' : 'Deposit tNIGHT'}
+          </button>
+        </div>
+        {depositMsg && (
+          <p className={`mt-2 text-xs ${depositStatus === 'ok' ? 'text-green-400' : depositStatus === 'err' ? 'text-red-400' : 'text-white/40'}`}>
+            {depositMsg}
+          </p>
+        )}
+      </div>
+
+      <div className="border border-white/10 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-white/70 mb-4">Spending This Month</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            {
+              label: 'Total Spent',
+              value: !walletAddress || jobsLoading ? '—' : `${totalSpent.toLocaleString()} tNIGHT`,
+            },
+            {
+              label: 'Requests',
+              value: !walletAddress || jobsLoading ? '—' : String(requestCount),
+            },
+            {
+              label: 'Avg per Call',
+              value:
+                !walletAddress || jobsLoading
+                  ? '—'
+                  : requestCount === 0
+                    ? '0 tNIGHT'
+                    : `${(avgPerCall).toLocaleString(undefined, { maximumFractionDigits: 6 })} tNIGHT`,
+            },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-white/[0.03] border border-white/5 rounded-lg px-4 py-3">
+              <div className="text-xs text-white/30 mb-1">{label}</div>
+              <div className="text-sm font-semibold text-white/80">{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="border border-white/10 rounded-xl p-5 space-y-3">
+        <h3 className="text-sm font-semibold text-white/70">How Escrow Works</h3>
+        {[
+          { step: '1', text: 'Deposit tNIGHT once into the ZKai escrow contract.' },
+          { step: '2', text: 'Each inference request auto-deducts 100 tNIGHT from your balance.' },
+          { step: '3', text: 'Unused funds can be withdrawn at any time.' },
+        ].map(({ step, text }) => (
+          <div key={step} className="flex items-start gap-3">
+            <div className="w-5 h-5 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center shrink-0 mt-0.5">
+              <span className="text-xs text-violet-400 font-bold">{step}</span>
+            </div>
+            <p className="text-sm text-white/40">{text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Locked placeholder ─────────────────────────────────────────────────────────
+
+function LockedSection({ label }: { label: string }) {
+  return (
+    <div className="relative flex min-h-[360px] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
+      <div className="pointer-events-none absolute inset-0 backdrop-blur-sm" />
+      <div className="relative text-center">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
+          <Lock className="h-5 w-5 text-white/25" />
+        </div>
+        <h2 className="text-lg font-semibold text-white/40">{label}</h2>
+        <p className="mt-1 text-sm text-white/25">Coming soon</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar ────────────────────────────────────────────────────────────────────
+
+function DashSidebar({ active, setActive }: { active: DashSection; setActive: (s: DashSection) => void }) {
+  const mainItems = SIDEBAR_ITEMS.filter(i => i.group === 'platform');
+  const acctItems = SIDEBAR_ITEMS.filter(i => i.group === 'account');
+
+  function Item({ item }: { item: SidebarItem }) {
+    const isActive = active === item.id;
+    const isLocked = !!item.locked;
+    const Icon = item.icon;
+
+    return (
+      <button
+        onClick={() => !isLocked && setActive(item.id)}
+        disabled={isLocked}
+        className={cn(
+          'group relative w-full rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors',
+          isActive ? 'border-white/20 bg-white/[0.08] text-white' : 'border-transparent text-white/55 hover:bg-white/[0.04] hover:text-white/85',
+          isLocked && 'cursor-not-allowed text-white/30',
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <Icon className={cn('h-4 w-4 shrink-0', isLocked && 'blur-[1px] opacity-70')} />
+          <span className={cn('flex-1', isLocked && 'blur-[2px] opacity-80 select-none')}>{item.label}</span>
+          {isLocked && <Lock className="h-3 w-3 shrink-0 text-white/20" />}
+          {isActive && !isLocked && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-white/35" />}
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <aside className="w-60 shrink-0 border-r border-white/10 bg-transparent">
+      <nav className="h-full overflow-y-auto p-3">
+        <div className="space-y-0.5">
+          {mainItems.map(item => <Item key={item.id} item={item} />)}
+        </div>
+        <div className="mt-5 space-y-0.5">
+          <div className="px-3 pb-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/25">Account</span>
+          </div>
+          {acctItems.map(item => <Item key={item.id} item={item} />)}
+        </div>
+      </nav>
+    </aside>
+  );
+}
+
+// ── Main export ────────────────────────────────────────────────────────────────
+
+export default function DashboardPage() {
+  const [section, setSection] = useState<DashSection>('api-keys');
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [connectedAPI, setConnectedAPI] = useState<ConnectedAPI | null>(null);
+
+  const sectionLabel = useMemo(
+    () => SIDEBAR_ITEMS.find(i => i.id === section)?.label ?? section,
+    [section],
+  );
+
+  const fontVars = {
+    '--font-sans': "'Geist', 'Geist Fallback'",
+    '--font-mono': "'Geist Mono', 'Geist Mono Fallback'",
+  } as CSSProperties;
+
+  function renderSection() {
+    switch (section) {
+      case 'api-keys':
+        return <ApiKeysSection walletAddress={walletAddress} connectedAPI={connectedAPI} />;
+      case 'activity':
+        return <ActivitySection walletAddress={walletAddress} />;
+      case 'logs':
+        return <LogsSection walletAddress={walletAddress} />;
+      case 'credits':
+        return <CreditsSection walletAddress={walletAddress} connectedAPI={connectedAPI} />;
+      default:
+        return <LockedSection label={sectionLabel} />;
+    }
+  }
+
+  return (
+    <main className="dark relative min-h-screen overflow-hidden bg-black font-sans text-white" style={fontVars}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_10%,rgba(165,243,208,0.12)_0%,transparent_30%),radial-gradient(circle_at_88%_12%,rgba(255,158,141,0.1)_0%,transparent_32%),radial-gradient(circle_at_54%_100%,rgba(179,157,219,0.1)_0%,transparent_42%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+      <Navigation
+        forceTransparent
+        onWalletChange={setWalletAddress}
+        onApiChange={setConnectedAPI}
+      />
+
+      <div className="relative z-10 min-h-screen pt-20">
+        <div className="flex min-h-[calc(100vh-5rem)]">
+          <DashSidebar active={section} setActive={setSection} />
+          <section className="min-w-0 flex-1 px-4 pb-8 pt-4 sm:px-6 lg:px-10">
+            {renderSection()}
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
