@@ -1,5 +1,5 @@
 // POST /api/auth/verify
-// Body: { wallet_address, nonce, signature }
+// Body: { wallet_address, nonce, coin_public_key, label }
 // Returns: { api_key: string }
 //
 // Verifies the nonce exists + not expired, then issues an API key.
@@ -14,10 +14,17 @@ import { randomBytes } from 'crypto';
 
 export async function POST(req: Request) {
   const sql = getSql();
-  const { wallet_address, nonce, coin_public_key } = await req.json();
+  const { wallet_address, nonce, coin_public_key, label } = await req.json();
+  const normalizedLabel = typeof label === 'string' ? label.trim() : '';
 
   if (!wallet_address || !nonce) {
     return NextResponse.json({ error: 'wallet_address and nonce required' }, { status: 400 });
+  }
+  if (!normalizedLabel) {
+    return NextResponse.json({ error: 'label required' }, { status: 400 });
+  }
+  if (normalizedLabel.length > 80) {
+    return NextResponse.json({ error: 'label must be 80 characters or less' }, { status: 400 });
   }
 
   // Verify nonce exists, matches wallet, and hasn't expired
@@ -45,9 +52,9 @@ export async function POST(req: Request) {
   const api_key = `zkai-${randomBytes(24).toString('hex')}`;
 
   await sql`
-    INSERT INTO api_keys (key, wallet_address)
-    VALUES (${api_key}, ${wallet_address})
+    INSERT INTO api_keys (key, wallet_address, label)
+    VALUES (${api_key}, ${wallet_address}, ${normalizedLabel})
   `;
 
-  return NextResponse.json({ api_key, wallet_address });
+  return NextResponse.json({ api_key, wallet_address, label: normalizedLabel });
 }

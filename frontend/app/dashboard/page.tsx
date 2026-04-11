@@ -906,11 +906,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ElementType } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Activity,
   BarChart2,
   Check,
   CheckCircle,
+  Info,
   ChevronRight,
   Copy,
   Cpu,
@@ -927,6 +929,7 @@ import {
   Shield,
   Trash2,
   Wallet,
+  X,
   XCircle,
   Clock,
 } from 'lucide-react';
@@ -976,6 +979,10 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: 'preferences',     label: 'Preferences',     icon: Settings,   group: 'account', locked: true },
 ];
 
+function isDashSection(value: string | null): value is DashSection {
+  return !!value && SIDEBAR_ITEMS.some(item => item.id === value);
+}
+
 // ── Data helpers (same sources as legacy dashboard: /api/auth/me, /api/jobs, /api/escrow/balance) ──
 
 interface ApiKeyRow {
@@ -1012,6 +1019,19 @@ function formatRelativeTime(iso: string | null | undefined): string {
   const d = Math.floor(hr / 24);
   if (d < 30) return `${d} day${d === 1 ? '' : 's'} ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatLatencyMs(ms: number | null | undefined): string {
@@ -1075,6 +1095,9 @@ function ApiKeysSection({
   const [search, setSearch] = useState('');
   const [copied, setCopied] = useState('');
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [createError, setCreateError] = useState('');
 
   const loadKeys = useCallback(async () => {
     if (!walletAddress) return;
@@ -1114,8 +1137,8 @@ function ApiKeysSection({
     await loadKeys();
   }
 
-  async function issueKey() {
-    if (!walletAddress) return;
+  async function issueKey(label: string): Promise<boolean> {
+    if (!walletAddress) return false;
     setIssuing(true);
     setIssueError('');
     try {
@@ -1124,6 +1147,10 @@ function ApiKeysSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wallet_address: walletAddress }),
       });
+      if (!chalRes.ok) {
+        const e = await chalRes.json().catch(() => ({}));
+        throw new Error((e as { error?: string }).error ?? 'Failed to request challenge');
+      }
       const { nonce } = await chalRes.json();
 
       let coin_public_key: string | null = null;
@@ -1139,17 +1166,45 @@ function ApiKeysSection({
       const verRes = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet_address: walletAddress, nonce, coin_public_key }),
+        body: JSON.stringify({ wallet_address: walletAddress, nonce, coin_public_key, label }),
       });
       if (!verRes.ok) {
         const e = await verRes.json();
         throw new Error(e.error ?? 'Failed to issue key');
       }
       await loadKeys();
+      return true;
     } catch (e: unknown) {
       setIssueError(e instanceof Error ? e.message : 'Failed to issue key');
+      return false;
     } finally {
       setIssuing(false);
+    }
+  }
+
+  function openCreateModal() {
+    setCreateError('');
+    setIssueError('');
+    setNewKeyName('');
+    setShowCreateModal(true);
+  }
+
+  function closeCreateModal() {
+    if (issuing) return;
+    setShowCreateModal(false);
+  }
+
+  async function submitCreateKey() {
+    const label = newKeyName.trim();
+    if (!label) {
+      setCreateError('Name is required.');
+      return;
+    }
+    setCreateError('');
+    const ok = await issueKey(label);
+    if (ok) {
+      setShowCreateModal(false);
+      setNewKeyName('');
     }
   }
 
@@ -1196,9 +1251,9 @@ function ApiKeysSection({
             </div>
             <button
               type="button"
-              onClick={() => issueKey()}
+              onClick={openCreateModal}
               disabled={createDisabled}
-              className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-70"
+              className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-[#001018] shadow-[0_8px_24px_rgba(6,182,212,0.3)] transition hover:bg-cyan-400"
             >
               <Plus className="h-4 w-4" />
               {issuing ? 'Creating…' : 'Create'}
@@ -1208,13 +1263,11 @@ function ApiKeysSection({
         {issueError && <p className="border-b border-white/10 px-4 py-2 text-xs text-red-400">{issueError}</p>}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.01]">
-                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">
-                  <input type="checkbox" className="h-3.5 w-3.5 rounded border-white/20 bg-black/50" />
-                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Key</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Created</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Expires</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Last Used</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-white/35">Usage</th>
@@ -1233,9 +1286,6 @@ function ApiKeysSection({
                 </tr>
               ) : filtered.map(k => (
                 <tr key={k.key} className="transition-colors hover:bg-white/[0.02]">
-                  <td className="px-4 py-3.5 align-top">
-                    <input type="checkbox" className="mt-1 h-3.5 w-3.5 rounded border-white/20 bg-black/50" />
-                  </td>
                   <td className="px-4 py-3.5">
                     <div className="space-y-0.5">
                       <p className="font-medium text-white/80">{k.label || '—'}</p>
@@ -1243,6 +1293,9 @@ function ApiKeysSection({
                         {revealed[k.key] ? k.key : `${k.key.slice(0, 16)}...${k.key.slice(-4)}`}
                       </p>
                     </div>
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-white/55">
+                    {formatDateTime(k.created_at)}
                   </td>
                   <td className="px-4 py-3.5 text-xs text-white/45">—</td>
                   <td className="px-4 py-3.5 text-xs text-white/45">—</td>
@@ -1287,6 +1340,102 @@ function ApiKeysSection({
           </table>
         </div>
       </div>
+
+      {showCreateModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-[1px]"
+          onClick={closeCreateModal}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0a0c10] p-5 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">Create API Key</h2>
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                disabled={issuing}
+                className="rounded-md p-1.5 text-white/40 transition-colors hover:bg-white/5 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              className="space-y-4"
+              onSubmit={e => {
+                e.preventDefault();
+                void submitCreateKey();
+              }}
+            >
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-sm text-white/70">
+                  Name
+                  <Info className="h-3.5 w-3.5 text-white/35" />
+                </label>
+                <input
+                  autoFocus
+                  value={newKeyName}
+                  onChange={e => setNewKeyName(e.target.value)}
+                  placeholder='e.g. "Chatbot Key"'
+                  maxLength={80}
+                  className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-violet-500/40 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-sm text-white/70">
+                  Credit limit (optional)
+                  <Info className="h-3.5 w-3.5 text-white/35" />
+                </label>
+                <input
+                  disabled
+                  defaultValue=""
+                  placeholder="Leave blank for unlimited"
+                  className="w-full cursor-not-allowed rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-white/35 placeholder:text-white/20"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-sm text-white/70">
+                  Expiration
+                  <Info className="h-3.5 w-3.5 text-white/35" />
+                </label>
+                <select
+                  disabled
+                  defaultValue="none"
+                  className="w-full cursor-not-allowed rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-white/35"
+                >
+                  <option value="none">No expiration</option>
+                </select>
+              </div>
+
+              {createError && <p className="text-xs text-red-400">{createError}</p>}
+              {issueError && <p className="text-xs text-red-400">{issueError}</p>}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeCreateModal}
+                  disabled={issuing}
+                  className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/65 transition-colors hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={issuing || !newKeyName.trim()}
+                  className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {issuing ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1791,7 +1940,11 @@ function DashSidebar({ active, setActive }: { active: DashSection; setActive: (s
 // ── Main export ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [section, setSection] = useState<DashSection>('api-keys');
+  const searchParams = useSearchParams();
+  const [section, setSection] = useState<DashSection>(() => {
+    const requestedSection = searchParams.get('section');
+    return isDashSection(requestedSection) ? requestedSection : 'api-keys';
+  });
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [connectedAPI, setConnectedAPI] = useState<ConnectedAPI | null>(null);
 

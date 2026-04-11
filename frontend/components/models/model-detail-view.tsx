@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   Copy,
@@ -810,6 +811,7 @@ function TrafficShareChart({ distribution }: { distribution: Array<{ provider: s
 }
 
 export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("pricing");
   const [copiedApiSnippet, setCopiedApiSnippet] = useState(false);
@@ -870,6 +872,10 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
     } catch {
       setCopiedApiSnippet(false);
     }
+  };
+
+  const goToApiKeys = () => {
+    router.push("/dashboard?section=api-keys");
   };
 
   const pricingTrend = model.price
@@ -1633,6 +1639,7 @@ export function ModelDetailView({ model }: { model: ModelDetailViewModel }) {
               </p>
               <button
                 type="button"
+                onClick={goToApiKeys}
                 className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-[#001018] shadow-[0_8px_24px_rgba(6,182,212,0.3)] transition hover:bg-cyan-400"
               >
                 <KeyRound className="h-4 w-4" />
