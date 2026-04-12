@@ -1081,6 +1081,21 @@ function HttpBadge({ code }: { code: number }) {
 
 // ── Quick-start snippet ────────────────────────────────────────────────────────
 
+const SNIPPET_ZKAI = (key: string) => `pip install zkai
+
+# ---
+
+from zkai import ZKai
+
+client = ZKai(api_key="${key}")
+
+response = client.chat.completions.create(
+    model="qwen2.5:1.5b",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+# response includes attestation_hash — verifiable on-chain`;
+
 const SNIPPET_PYTHON = (key: string) => `from openai import OpenAI
 
 client = OpenAI(
@@ -1116,10 +1131,10 @@ const res = await client.chat.completions.create({
 console.log(res.choices[0].message.content);`;
 
 function QuickStart({ apiKey }: { apiKey: string }) {
-  const [tab, setTab] = useState<'python' | 'curl' | 'js'>('python');
+  const [tab, setTab] = useState<'zkai' | 'python' | 'curl' | 'js'>('zkai');
   const [copied, setCopied] = useState(false);
 
-  const snippets = { python: SNIPPET_PYTHON(apiKey), curl: SNIPPET_CURL(apiKey), js: SNIPPET_JS(apiKey) };
+  const snippets = { zkai: SNIPPET_ZKAI(apiKey), python: SNIPPET_PYTHON(apiKey), curl: SNIPPET_CURL(apiKey), js: SNIPPET_JS(apiKey) };
   const current = snippets[tab];
 
   function copy() {
@@ -1128,10 +1143,11 @@ function QuickStart({ apiKey }: { apiKey: string }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const tabs: { id: 'python' | 'curl' | 'js'; label: string }[] = [
-    { id: 'python', label: 'Python' },
-    { id: 'curl',   label: 'cURL'   },
-    { id: 'js',     label: 'Node.js' },
+  const tabs: { id: 'zkai' | 'python' | 'curl' | 'js'; label: string }[] = [
+    { id: 'zkai',   label: 'ZKai SDK' },
+    { id: 'python', label: 'Python'   },
+    { id: 'curl',   label: 'cURL'     },
+    { id: 'js',     label: 'Node.js'  },
   ];
 
   return (
