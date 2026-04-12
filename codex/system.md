@@ -1,4 +1,4 @@
-# ZKai — Copilot Workspace Instructions
+# ZKai — codex Workspace Instructions
 
 ## Project Identity
 
@@ -68,8 +68,8 @@ Entry point: `POST /api/v1/chat/completions`
 ```
 zkai/
 ├── .github/
-│   ├── copilot-instructions.md     ← you are here
-│   └── prompts/                    ← Copilot prompt files
+│   ├── codex-instructions.md     ← you are here
+│   └── prompts/                    ← codex prompt files
 ├── bridge/              Node.js / Fastify — zkai-bridge (wallet, payments, ZK, attestation)
 ├── cli/                 Provider CLI tool
 ├── contracts/src/       Compact smart contracts for Midnight
