@@ -1107,7 +1107,8 @@ response = client.chat.completions.create(
     model="qwen2.5:1.5b",
     messages=[{"role": "user", "content": "Hello!"}],
 )
-print(response.choices[0].message.content)`;
+print(response.choices[0].message.content)
+print(response.usage)`;
 
 const SNIPPET_CURL = (key: string) => `curl https://zkai.vercel.app/api/v1/chat/completions \\
   -H "Authorization: Bearer ${key}" \\

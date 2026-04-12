@@ -10,7 +10,7 @@ from . import crypto, provider as provider_mod, attestation as att_mod
 from .attestation import ZKaiAttestationError
 
 # Default gateway — consumers send requests here, gateway picks a provider
-GATEWAY_URL = "https://zkai.dev"
+GATEWAY_URL = "https://zkai.vercel.app"
 
 
 # ── OpenAI-compatible response types ────────────────────────────────────────
