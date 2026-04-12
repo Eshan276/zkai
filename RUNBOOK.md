@@ -1,302 +1,258 @@
 # ZKai Runbook
 
-**Network:** Midnight Preprod
-**Contracts (live):**
-- ProviderRegistry: `38cd120df3dcdd54ab560f705c746c66f80ce457298323262427a1074e13d655`
-- PaymentEscrow: `bfae0b0329c15978c892047bb4cee425030184153abdddd4a53a0f155c4a91da`
-- AttestationRegistry: `e9dd5bad3fbc08ab866e55beb9b48bbc832d232c60edd322cdbebed1ee2a0b32`
+Operational guide for running, validating, and troubleshooting ZKai services on Midnight preprod.
+
+## Quick Navigation
+
+1. [Live Configuration](#live-configuration)
+2. [Architecture Snapshot](#architecture-snapshot)
+3. [Provider Operations](#provider-operations)
+4. [Consumer Smoke Test](#consumer-smoke-test)
+5. [Health and Monitoring](#health-and-monitoring)
+6. [Troubleshooting Matrix](#troubleshooting-matrix)
+7. [Security and Ops Hygiene](#security-and-ops-hygiene)
 
 ---
 
-## Architecture (v1)
+## Live Configuration
 
-```
-Consumer (Python)                  Provider Server                 Midnight Chain
-─────────────────                  ───────────────                 ─────────────
-pip install zkai                   Docker Compose:
-                                     ┌─ enclave (port 8080)
-ZKai(api_key="...")                  │    Ollama + FastAPI
-  │                                  └─ bridge  (port 7300)
-  │                                       Midnight wallet
-  │
-  ├─ GET /pubkey ─────────────────► enclave
-  ├─ POST /infer (encrypted) ─────► enclave
-  │                                  decrypts → Ollama → encrypts
-  │                                  bridge.postAttestation() ───► AttestationRegistry
-  │
-  ├─ verify attestation ──────────────────────────────────────────► indexer GraphQL (free)
-  └─ decrypt response
-```
+| Item | Value |
+|---|---|
+| Network | Midnight preprod |
+| Gateway | `https://zkai.vercel.app` |
+| Relay | `https://zkai-relay.fly.dev` |
+| Provider Registry | `70f8c6b8661f687631165f333b1e5bd53919ce2ba03e029dc112c5e4f09c657e` |
+| Payment Escrow | `c7bcfc56772be622e5e31e8cd84b53f1a4fb259568de7f94ae3c9d6a10dd44d4` |
+| Attestation Registry | `9dfc5a38a7c8dca27fdfcec4360a66991b491947f48761fc8454a52717f6ff6a` |
 
-**Key design decisions:**
-- Consumers: no wallet, no Node.js, no bridge. Just `pip install zkai` + API key.
-- Providers: run everything server-side (Docker Compose brings up enclave + bridge together).
-- Blockchain: providers write (register, post attestations), consumers only read (free, via GraphQL).
+> Keep contract values in sync with `provider/docker-compose.yml` and frontend env vars before production-like testing.
 
 ---
 
-## For Providers
+## Architecture Snapshot
 
-### Requirements
-- Linux server with Docker + Docker Compose
-- Node.js 20+ (used inside bridge container — no install needed if using Docker)
-- 4 GB RAM minimum
-- A Midnight preprod wallet with tNight tokens
-- A public IP or domain (so consumers can reach your endpoint)
+ZKai request path:
+
+`Consumer -> Gateway (Vercel) -> Relay (Fly.io) -> Provider Enclave (Ollama + FastAPI) -> Bridge (Midnight wallet/contracts) -> Midnight preprod`
+
+Service split on provider node:
+
+- `zkai-enclave` (port `8080`): inference, enclave keypair, attestation hash generation.
+- `zkai-bridge` (port `7300`, internal): wallet sync, contract calls, provider registry updates.
+- `zkai-proof-server` (port `6300`, internal): proof generation used by bridge flows.
+
+Trust boundary summary:
+
+- Plaintext inference execution is enclave-side.
+- Payment and attestation anchoring are bridge-side.
+- Relay forwards correlated payloads and responses over persistent provider WebSocket sessions.
 
 ---
 
-### Step 1 — Clone and configure
+## Provider Operations
+
+### 1. Prerequisites
+
+- Linux server or VM with outbound internet access.
+- Docker Engine + Docker Compose v2.
+- Python `3.9+` (for CLI bootstrap path).
+- Midnight preprod wallet seed funded with tNIGHT.
+- At least 4 GB RAM (8 GB recommended).
+
+### 2. Bootstrap (Recommended: CLI Path)
 
 ```bash
-git clone https://github.com/your-org/zkai
+git clone https://github.com/Eshan276/zkai.git
 cd zkai
+pip install ./cli
+
+zkai init
+zkai start
+zkai register --model qwen2.5:1.5b --price 100
 ```
 
----
+What this does:
 
-### Step 2 — Get a Midnight wallet and fund it
+1. Pulls relay config and writes provider env files.
+2. Generates or reuses wallet seed files (`deploy/.seed`, `deploy/.bridge-seed`).
+3. Starts `enclave`, `bridge`, and `proof-server` via Docker Compose.
+4. Registers provider endpoint for gateway discovery and submits on-chain registration.
 
-```bash
-cd wallet
-npm install
-node keygen.mjs
-```
-
-Save the **seed** (64 hex chars). Fund the **unshielded address** (`mn_addr_preprod1...`):
-- Faucet: https://faucet.preprod.midnight.network/
-- Request 1000 tNight. Wait ~2 minutes.
-
-Write the seed to the deploy directory:
-```bash
-echo "YOUR_64_HEX_SEED" > deploy/.seed
-```
-
----
-
-### Step 3 — Generate API keys for your consumers
-
-Create a file with one key per line:
-```bash
-# Generate 3 random API keys
-python3 -c "import secrets; [print(secrets.token_hex(32)) for _ in range(3)]" > provider/api_keys.txt
-cat provider/api_keys.txt
-```
-
-Set them as an env var (or use the file):
-```bash
-# Option A: comma-separated in .env
-echo 'ZKAI_API_KEYS=key1,key2,key3' > provider/.env
-
-# Option B: file (add to docker-compose.yml: ZKAI_API_KEYS_FILE=/keys.txt)
-```
-
-Share individual keys with each consumer. Rotate anytime by updating the list.
-
-Leave `ZKAI_API_KEYS` empty for open access (dev mode — no auth required).
-
----
-
-### Step 4 — Start everything
+### 3. Bootstrap (Manual Compose Path)
 
 ```bash
-cd provider
+git clone https://github.com/Eshan276/zkai.git
+cd zkai/provider
 docker compose up -d
 ```
 
-This starts two containers:
-- **zkai-bridge** — syncs your Midnight wallet, exposes port 7300 (internal only)
-- **zkai-enclave** — Ollama + FastAPI on port 8080 (public)
-
-Watch startup logs:
-```bash
-docker compose logs -f
-```
-
-The bridge takes 2-5 minutes to sync with Midnight on first boot. Wait until you see:
-```
-zkai-bridge  | Wallet synced.
-zkai-bridge  | Bridge running at http://127.0.0.1:7300
-zkai-enclave | Application startup complete.
-```
-
----
-
-### Step 5 — Register your provider on-chain (one time)
+Manual registration:
 
 ```bash
 docker compose exec bridge npx tsx src/register-provider.ts \
-  --endpoint http://YOUR_PUBLIC_IP_OR_DOMAIN:8080 \
-  --model qwen2.5-1.5b \
+  --endpoint https://zkai-relay.fly.dev/relay/<provider_id> \
+  --model qwen2.5:1.5b \
   --price 100
 ```
 
-Expected:
-```
-TEE pubkey: <hex>
-Provider ID: <64 hex chars>
-✅ Provider registered!
-   TX: <tx hash>
-```
-
-Save your Provider ID. You're now discoverable by consumers who query the on-chain registry.
-
----
-
-### Step 6 — Verify everything works
+### 4. First-Run Validation
 
 ```bash
-# Health checks
-curl http://localhost:8080/health
-# {"status":"ok","enclave_mode":"direct"}
+zkai status
+zkai logs bridge --lines 80
+zkai logs enclave --lines 80
+```
 
-curl http://localhost:7300/health
-# {"status":"ok","synced":true,"address":"mn_addr_preprod1..."}
+Expected signals:
 
-# Test inference (no auth if ZKAI_API_KEYS is empty)
-curl -X POST http://localhost:8080/infer \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_KEY" \
-  -d '{"client_pubkey":"test","encrypted_prompt":"test"}'
+- Bridge reports `synced: true` from `/health`.
+- Enclave `/health` returns `{"status":"ok", ...}`.
+- Enclave logs show relay connection established.
+- Provider appears in `https://zkai.vercel.app/provider_dashboard?id=<provider_id>`.
+
+### 5. Day-2 Commands
+
+```bash
+zkai status
+zkai logs --follow
+zkai restart enclave
+zkai restart bridge
+zkai stop
+zkai deregister
 ```
 
 ---
 
-### Provider is live
+## Consumer Smoke Test
 
-Your setup:
-- Enclave running on port 8080 (expose this publicly)
-- Bridge running internally (never expose port 7300 externally)
-- Every inference automatically posts an attestation to Midnight
-- Consumers can verify your attestations for free via the indexer
+### 1. HTTP Gateway Test
 
-Keep both containers running. They restart automatically on failure.
+```bash
+curl -X POST https://zkai.vercel.app/api/v1/chat/completions \
+  -H "Authorization: Bearer zkai-YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5:1.5b","messages":[{"role":"user","content":"Hello"}]}'
+```
 
----
+Expected outcome:
 
-## For Consumers
+- HTTP `200` with OpenAI-compatible `choices[0].message.content`.
+- Response includes `x_zkai` metadata (job ID, attestation hash) when upstream path provides it.
 
-No wallet. No Node.js. No blockchain setup.
-
-### Step 1 — Install
+### 2. Python SDK Test
 
 ```bash
 pip install zkai
 ```
 
----
+```python
+from zkai import ZKai
 
-### Step 2 — Get an API key from a provider
+client = ZKai(
+    api_key="zkai-YOUR_KEY",
+    base_url="https://zkai.vercel.app",
+)
 
-Contact a provider and get an API key. They'll give you:
-- Their endpoint URL (e.g. `https://provider.example.com:8080`)
-- An API key
+resp = client.chat.completions.create(
+    model="qwen2.5:1.5b",
+    messages=[{"role": "user", "content": "Explain attestation in one line."}],
+)
 
----
+print(resp.choices[0].message.content)
+```
 
-### Step 3 — Use it
-
-#### Basic (provider auto-selected from on-chain registry)
+### 3. Direct Provider Test (Advanced)
 
 ```python
 from zkai import ZKai
 
 client = ZKai(
-    api_key="your-api-key",
-    registry_contract="38cd120df3dcdd54ab560f705c746c66f80ce457298323262427a1074e13d655",
-    attestation_contract="e9dd5bad3fbc08ab866e55beb9b48bbc832d232c60edd322cdbebed1ee2a0b32",
+    api_key="zkai-YOUR_KEY",
+    provider_endpoint="http://localhost:8080",
 )
 
-response = client.chat.completions.create(
+resp = client.chat.completions.create(
     model="qwen2.5-1.5b",
-    messages=[{"role": "user", "content": "Explain zero-knowledge proofs simply"}]
+    messages=[{"role": "user", "content": "Direct path test"}],
 )
 
-print(response.choices[0].message.content)
-```
-
-#### Point directly at a specific provider
-
-```python
-from zkai import ZKai
-from zkai.provider import Provider
-
-# Bypass registry — use a specific provider directly
-client = ZKai(api_key="your-api-key")
-
-# Override provider selection (advanced)
-import zkai.provider as p
-p._OVERRIDE_ENDPOINT = "https://provider.example.com:8080"
-```
-
-Or simpler — just set `registry_contract=None` and make sure the provider runs locally:
-```python
-client = ZKai(api_key="your-key")  # defaults to localhost:8080
-```
-
-#### LangChain drop-in
-
-```python
-from zkai import ChatZKai
-
-llm = ChatZKai(
-    api_key="your-api-key",
-    registry_contract="38cd120df3dcdd54ab560f705c746c66f80ce457298323262427a1074e13d655",
-    attestation_contract="e9dd5bad3fbc08ab866e55beb9b48bbc832d232c60edd322cdbebed1ee2a0b32",
-)
-
-# Use exactly like ChatOpenAI
-response = llm.invoke("What is a TEE?")
-print(response.content)
+print(resp.choices[0].message.content)
 ```
 
 ---
 
-## What the SDK does under the hood
+## Health and Monitoring
 
-Every `chat.completions.create()` call:
+### Core Health Checks
 
-```
-1. Query ProviderRegistry (GraphQL) → find best provider by reputation + price
-2. GET /pubkey → fetch provider's TEE public key
-3. Generate ephemeral X25519 keypair
-4. Encrypt prompt with X25519 ECDH + ChaCha20-Poly1305
-5. POST /infer {encrypted_prompt, client_pubkey} + X-API-Key header
-   → Provider decrypts inside TEE, runs Ollama, encrypts response
-   → Provider posts attestation hash to Midnight (you don't wait for this)
-6. Verify attestation:
-   - Fetch /attestation from provider
-   - SHA256 hash it
-   - Compare to attestation_hash in /infer response ✓
-   - (optional) Compare to on-chain hash from AttestationRegistry ✓
-   - Mismatch → raise ZKaiAttestationError
-7. Decrypt response with the same ephemeral keypair
-8. Return ChatCompletion object
+| Component | Command | Healthy Signal |
+|---|---|---|
+| Enclave | `curl http://localhost:8080/health` | `status=ok` |
+| Bridge | `curl http://localhost:7300/health` | `synced=true` |
+| Relay | `curl https://zkai-relay.fly.dev/health` | `status=ok` and provider count |
+| Gateway | `curl https://zkai.vercel.app/api/relay-config` | returns relay config when configured |
+
+### Useful Logs
+
+```bash
+zkai logs enclave --lines 100
+zkai logs bridge --lines 100
+docker logs zkai-proof-server --tail 100
 ```
 
-The provider operator **cannot read your prompts** — they're encrypted before transmission and decrypted only inside the TEE.
+### Wallet/Sync Observability
+
+Bridge sync can take 2-5 minutes on cold start. During this window:
+
+- `zkai-bridge` is up but may report `synced=false`.
+- Contract calls can fail until sync and dust readiness complete.
+- Keep node running; avoid repeated restarts during initial sync.
 
 ---
 
-## Troubleshooting
+## Troubleshooting Matrix
 
-**`ZKaiAuthError: Invalid or missing API key`**
-→ Get an API key from your provider. Pass it as `api_key=` to ZKai.
+| Symptom | Likely Cause | What to Check | Action |
+|---|---|---|---|
+| `No providers available for model` | Provider not active or not registered | Provider dashboard, `/api/providers`, relay health | Re-run `zkai register`, verify model string and endpoint |
+| Gateway returns `503 provider_offline` | Relay has no live WS session for provider | Relay health count, enclave logs | Restart enclave and confirm relay URL/secret env vars |
+| Bridge never reaches `synced=true` | Seed invalid, unfunded wallet, or network lag | `deploy/.seed`, bridge logs, faucet funding | Fund wallet, verify seed format, wait full sync cycle |
+| `Invalid or missing API key` | Wrong/revoked key | `/api/auth/verify-key`, dashboard key state | Issue new key in dashboard and retry |
+| Attestation mismatch | Provider restart, stale state, or tamper | SDK exception details, provider `/attestation`, chain hash | Retry once, then switch provider and investigate |
+| `docker compose` starts but no inference | Model still downloading | Enclave logs | Wait for first model pull completion |
+| Proof-related tx failures | Proof server unavailable or wrong URL | proof-server container logs, `PROOF_SERVER_URL` | Restart proof server and bridge |
 
-**`ZKaiAttestationError`**
-→ The provider's attestation doesn't match. Either:
-- Provider restarted (new keypair) — wait a few minutes and retry
-- Genuinely tampered — switch providers
-- For dev/testing: `ZKai(skip_attestation=True)`
+### Common Fix Commands
 
-**`No providers available for model`**
-→ Pass `registry_contract=None` to skip on-chain lookup and use `localhost:8080`
+```bash
+zkai restart bridge
+zkai restart enclave
+zkai logs --follow
+docker volume ls | grep bridge_leveldb
+```
 
-**Bridge won't sync (provider side)**
-→ Check your seed file: `cat deploy/.seed` — must be 64 hex chars
-→ Check tNight balance was received (wait 2-3 min after faucet)
-→ `docker compose logs bridge` for details
+If bridge state is irrecoverably stuck in development environments, stop containers and reset only after confirming you can resync safely.
 
-**Model download slow (provider side)**
-→ First run downloads Qwen2.5-1.5B (~1GB). Just wait.
-→ `docker compose logs enclave` to watch progress
+---
+
+## Security and Ops Hygiene
+
+- Do not expose bridge port `7300` publicly.
+- Rotate wallet/API secrets when access scope changes.
+- Keep `deploy/.seed` and `.bridge-seed` file permissions strict.
+- Pin model and dependency versions for reproducible behavior.
+- Treat `provider/.env` as sensitive operational config.
+- Use separate wallets for test and production-like environments.
+
+---
+
+## Change Log Checklist
+
+When updating this runbook, verify all of the following:
+
+1. Contract addresses match deployment defaults.
+2. Gateway/relay URLs are current.
+3. CLI commands match `cli/zkai_cli/main.py`.
+4. Bridge route names match `bridge/src/routes/*`.
+5. Provider health examples match `provider/api/main.py`.
+

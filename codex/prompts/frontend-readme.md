@@ -1,8 +1,7 @@
 ---
 mode: agent
 tools:
-  - codebase
-  - editFiles
+[vscode, execute, read, agent, edit, search, web, browser, todo]
 description: >
   Generate frontend/README.md for ZKai.
   Covers what the frontend is, prerequisites, environment variables, local dev setup,
