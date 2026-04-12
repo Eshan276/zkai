@@ -905,7 +905,8 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, ElementType } from 'react';
+import type { CSSProperties, ElementType, FC } from 'react';
+import React from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Activity,
@@ -1002,6 +1003,8 @@ interface DashboardJob {
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
   duration_ms?: number | null;
+  cpu_percent?: number | null;
+  ram_mb?: number | null;
   created_at?: string | null;
 }
 
@@ -1553,6 +1556,66 @@ function ApiKeysSection({
   );
 }
 
+// ── Job Row (expandable) ────────────────────────────────────────────────────────
+
+function JobRow({ job, StatusIcon }: {
+  job: DashboardJob & { uiStatus: 0 | 1 | 2 };
+  StatusIcon: FC<{ status: number }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasAttestation = job.attestation_hash && !/^0+$/.test(job.attestation_hash.trim());
+
+  const details: { label: string; value: string | number | null | undefined }[] = [
+    { label: 'Job ID',            value: job.id },
+    { label: 'Provider ID',       value: job.provider_id || '—' },
+    { label: 'Model',             value: job.model || '—' },
+    { label: 'Prompt tokens',     value: job.prompt_tokens ?? '—' },
+    { label: 'Completion tokens', value: job.completion_tokens ?? '—' },
+    { label: 'Duration',          value: job.duration_ms != null ? `${job.duration_ms} ms` : '—' },
+    { label: 'CPU',               value: job.cpu_percent != null ? `${job.cpu_percent.toFixed(1)}%` : '—' },
+    { label: 'RAM',               value: job.ram_mb != null ? `${job.ram_mb.toFixed(0)} MB` : '—' },
+    { label: 'Attestation hash',  value: hasAttestation ? job.attestation_hash : '—' },
+  ];
+
+  return (
+    <div className="divide-y divide-white/[0.04]">
+      <div
+        className="flex items-center justify-between px-5 py-4 hover:bg-white/[0.02] transition-colors cursor-pointer select-none"
+        onClick={() => setOpen(o => !o)}
+      >
+        <div className="flex items-center gap-3">
+          <StatusIcon status={job.uiStatus} />
+          <div>
+            <div className="text-sm font-medium text-white/80">{job.model || '—'}</div>
+            <div className="text-xs text-white/30 mt-0.5">{formatRelativeTime(job.created_at)}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-white/40 tabular-nums">{jobTokens(job).toLocaleString()} tokens</span>
+          <span className="text-xs text-white/50 tabular-nums">{job.amount.toLocaleString()} tNIGHT</span>
+          <StatusBadge status={job.uiStatus} />
+          <ChevronRight
+            className={`h-3.5 w-3.5 text-white/25 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+          />
+        </div>
+      </div>
+
+      {open && (
+        <div className="bg-white/[0.01] px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2.5">
+          {details.map(({ label, value }) => (
+            <div key={label} className="flex items-start justify-between gap-4 text-xs">
+              <span className="text-white/35 shrink-0">{label}</span>
+              <span className={`font-mono text-right break-all ${label === 'Attestation hash' && hasAttestation ? 'text-cyan-400' : 'text-white/60'}`}>
+                {value as string}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Section: Activity ──────────────────────────────────────────────────────────
 
 function deriveJobUiStatus(j: DashboardJob): 0 | 1 | 2 {
@@ -1662,22 +1725,7 @@ function ActivitySection({ walletAddress }: { walletAddress: string | null }) {
         ) : filtered.length === 0 ? (
           <div className="px-5 py-12 text-center text-sm text-white/30">No jobs match this filter.</div>
         ) : (
-          filtered.map(job => (
-            <div key={job.id} className="flex items-center justify-between px-5 py-4 hover:bg-white/[0.02] transition-colors">
-              <div className="flex items-center gap-3">
-                <StatusIcon status={job.uiStatus} />
-                <div>
-                  <div className="text-sm font-medium text-white/80">{job.model || '—'}</div>
-                  <div className="text-xs text-white/30 mt-0.5">{formatRelativeTime(job.created_at)}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-xs text-white/40 tabular-nums">{jobTokens(job).toLocaleString()} tokens</span>
-                <span className="text-xs text-white/50 tabular-nums">{job.amount.toLocaleString()} tNIGHT</span>
-                <StatusBadge status={job.uiStatus} />
-              </div>
-            </div>
-          ))
+          filtered.map(job => <JobRow key={job.id} job={job} StatusIcon={StatusIcon} />)
         )}
       </div>
     </div>
