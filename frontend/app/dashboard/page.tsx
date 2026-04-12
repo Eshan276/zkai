@@ -1079,6 +1079,99 @@ function HttpBadge({ code }: { code: number }) {
   );
 }
 
+// ── Quick-start snippet ────────────────────────────────────────────────────────
+
+const SNIPPET_PYTHON = (key: string) => `from openai import OpenAI
+
+client = OpenAI(
+    api_key="${key}",
+    base_url="https://zkai.vercel.app/api/v1",
+)
+
+response = client.chat.completions.create(
+    model="qwen2.5:1.5b",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)`;
+
+const SNIPPET_CURL = (key: string) => `curl https://zkai.vercel.app/api/v1/chat/completions \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "qwen2.5:1.5b",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'`;
+
+const SNIPPET_JS = (key: string) => `import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "${key}",
+  baseURL: "https://zkai.vercel.app/api/v1",
+});
+
+const res = await client.chat.completions.create({
+  model: "qwen2.5:1.5b",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+console.log(res.choices[0].message.content);`;
+
+function QuickStart({ apiKey }: { apiKey: string }) {
+  const [tab, setTab] = useState<'python' | 'curl' | 'js'>('python');
+  const [copied, setCopied] = useState(false);
+
+  const snippets = { python: SNIPPET_PYTHON(apiKey), curl: SNIPPET_CURL(apiKey), js: SNIPPET_JS(apiKey) };
+  const current = snippets[tab];
+
+  function copy() {
+    void navigator.clipboard.writeText(current);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const tabs: { id: 'python' | 'curl' | 'js'; label: string }[] = [
+    { id: 'python', label: 'Python' },
+    { id: 'curl',   label: 'cURL'   },
+    { id: 'js',     label: 'Node.js' },
+  ];
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02]">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <p className="text-sm font-medium text-white/70">Quick start</p>
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/30 p-0.5">
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                tab === t.id
+                  ? 'bg-cyan-500 text-[#001018]'
+                  : 'text-white/40 hover:text-white/70'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="relative">
+        <pre className="overflow-x-auto px-5 py-4 text-xs leading-relaxed text-white/70">
+          <code>{current}</code>
+        </pre>
+        <button
+          type="button"
+          onClick={copy}
+          className="absolute right-3 top-3 rounded-md border border-white/10 bg-white/[0.04] p-1.5 text-white/40 transition-colors hover:bg-white/[0.08] hover:text-white/70"
+          title="Copy"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Section: API Keys ──────────────────────────────────────────────────────────
 
 function ApiKeysSection({
@@ -1340,6 +1433,9 @@ function ApiKeysSection({
           </table>
         </div>
       </div>
+
+      {/* Quick-start snippet */}
+      <QuickStart apiKey={rows.find(r => !r.revoked)?.key ?? '<your-api-key>'} />
 
       {showCreateModal && (
         <div
