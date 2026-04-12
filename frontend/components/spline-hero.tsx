@@ -3,7 +3,7 @@
 import type { Application } from '@splinetool/runtime';
 import React, { useEffect, useRef, useState } from 'react';
 
-const SCENE_URL = 'https://prod.spline.design/B8J1g8wI37Zc4ij3/scene.splinecode';
+const SCENE_URL = 'https://prod.spline.design/cSfENQjU5HVsSvJg/scene.splinecode';
 
 type WebGLContextCreationErrorEvent = Event & {
   statusMessage?: string;
