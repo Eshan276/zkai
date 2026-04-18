@@ -1,9 +1,9 @@
 {
-  "network": "preprod",
-  "deployedAt": "2026-04-04T06:36:29.974Z",
+  "network": "0g-galileo",
+  "deployedAt": "2026-04-18T05:22:08.585Z",
   "contracts": {
-    "ProviderRegistry": "70f8c6b8661f687631165f333b1e5bd53919ce2ba03e029dc112c5e4f09c657e",
-    "PaymentEscrow": "c7bcfc56772be622e5e31e8cd84b53f1a4fb259568de7f94ae3c9d6a10dd44d4",
-    "AttestationRegistry": "9dfc5a38a7c8dca27fdfcec4360a66991b491947f48761fc8454a52717f6ff6a"
+    "ProviderRegistry": "0x6D400F5D1DcCaA3e98E3dE17322aA23DE38bAC99",
+    "PaymentEscrow": "0xb2C7c0F7a4C2877319E8Ed1Fae0bf3C705b6Fc4C",
+    "AttestationRegistry": "0x8c8Ae0A113084268D181fd1cf23d611DC2EAa2B2"
   }
 }

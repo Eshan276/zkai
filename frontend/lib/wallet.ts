@@ -1,107 +1,76 @@
 'use client';
 
-import type { ConnectedAPI, InitialAPI } from '@midnight-ntwrk/dapp-connector-api';
+import { ethers } from 'ethers';
 
-export type { ConnectedAPI };
-
-export interface MidnightWalletState {
+export interface WalletState {
   address: string;
-  dustBalance: bigint;
-  unshieldedBalances: Record<string, bigint>;
+  balance: bigint;
+  chainId: number;
 }
-
-// Re-export the official type aliases for use throughout the app
-export type MidnightWalletEnabledAPI = ConnectedAPI;
-export type MidnightWalletAPI = InitialAPI;
 
 declare global {
   interface Window {
-    midnight?: Record<string, InitialAPI>;
+    ethereum?: any;
   }
 }
 
-export function getWalletExtension(): MidnightWalletAPI | null {
-  if (typeof window === 'undefined') return null;
-  const midnight = window.midnight as Record<string, any> | undefined;
-  if (!midnight) return null;
-  return midnight.mnLace ?? Object.values(midnight)[0] ?? null;
+export function isMetaMaskAvailable(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window.ethereum?.isMetaMask || window.ethereum);
 }
 
-export async function waitForExtension(timeoutMs = 3000): Promise<MidnightWalletAPI | null> {
-  const interval = 100;
-  const attempts = timeoutMs / interval;
-  for (let i = 0; i < attempts; i++) {
-    const ext = getWalletExtension();
-    if (ext) return ext;
-    await new Promise(r => setTimeout(r, interval));
+export async function connectWallet(): Promise<{ provider: ethers.BrowserProvider; state: WalletState }> {
+  if (typeof window === 'undefined' || !window.ethereum) {
+    throw new Error('MetaMask not found. Install MetaMask to continue.');
   }
-  return null;
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send('eth_requestAccounts', []);
+  const signer = await provider.getSigner();
+  const address = await signer.getAddress();
+  const balance = await provider.getBalance(address);
+  const network = await provider.getNetwork();
+  return { provider, state: { address, balance, chainId: Number(network.chainId) } };
 }
 
-function coerceString(val: unknown): string {
-  if (typeof val === 'string') return val;
-  if (val && typeof (val as any).toString === 'function') return (val as any).toString();
-  return String(val);
+export async function refreshWalletState(provider: ethers.BrowserProvider): Promise<WalletState> {
+  const signer = await provider.getSigner();
+  const address = await signer.getAddress();
+  const balance = await provider.getBalance(address);
+  const network = await provider.getNetwork();
+  return { address, balance, chainId: Number(network.chainId) };
 }
 
-function coerceBigInt(val: unknown): bigint {
-  if (typeof val === 'bigint') return val;
-  try { return BigInt(String(val ?? 0)); } catch { return BigInt(0); }
+export async function switchTo0GGalileo(provider: ethers.BrowserProvider): Promise<void> {
+  try {
+    await provider.send('wallet_switchEthereumChain', [{ chainId: '0x40DA' }]); // 16602
+  } catch (e: any) {
+    if (e.code === 4902) {
+      await provider.send('wallet_addEthereumChain', [{
+        chainId: '0x40DA',
+        chainName: '0G Galileo Testnet',
+        nativeCurrency: { name: 'A0GI', symbol: 'A0GI', decimals: 18 },
+        rpcUrls: ['https://evmrpc-testnet.0g.ai'],
+        blockExplorerUrls: ['https://chainscan-galileo.0g.ai'],
+      }]);
+    } else {
+      throw e;
+    }
+  }
 }
 
-async function fetchState(api: MidnightWalletEnabledAPI): Promise<MidnightWalletState> {
-  const [addressRaw, dustRaw, balancesRaw] = await Promise.all([
-    api.getUnshieldedAddress(),
-    api.getDustBalance(),
-    api.getUnshieldedBalances(),
-  ]);
-  const addrObj = addressRaw as any;
-  const dustObj = dustRaw as any;
-  return {
-    address: addrObj?.unshieldedAddress ?? addrObj?.address ?? coerceString(addressRaw),
-    dustBalance: coerceBigInt(dustObj?.balance ?? dustObj?.amount ?? dustObj),
-    unshieldedBalances: balancesRaw as Record<string, bigint> ?? {},
-  };
-}
-
-export async function connectWallet(): Promise<{ api: MidnightWalletEnabledAPI; state: MidnightWalletState }> {
-  const ext = getWalletExtension();
-  if (!ext) throw new Error('Midnight Lace wallet not found. Install it from the Chrome Web Store.');
-  const api = await ext.connect('preprod');
-  const state = await fetchState(api);
-  return { api, state };
-}
-
-export async function refreshWalletState(api: MidnightWalletEnabledAPI): Promise<MidnightWalletState> {
-  return fetchState(api);
-}
-
-/** localStorage key: user chose to stay connected across pages / reloads */
-const WALLET_SESSION_KEY = 'zkai_midnight_wallet_connected';
+const WALLET_SESSION_KEY = 'zkai_wallet_connected';
 
 export function persistWalletSession(): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(WALLET_SESSION_KEY, '1');
-  } catch {
-    /* quota / private mode */
-  }
+  try { localStorage.setItem(WALLET_SESSION_KEY, '1'); } catch {}
 }
 
 export function clearWalletSession(): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(WALLET_SESSION_KEY);
-  } catch {
-    /* ignore */
-  }
+  try { localStorage.removeItem(WALLET_SESSION_KEY); } catch {}
 }
 
 export function hasPersistedWalletSession(): boolean {
   if (typeof window === 'undefined') return false;
-  try {
-    return localStorage.getItem(WALLET_SESSION_KEY) === '1';
-  } catch {
-    return false;
-  }
+  try { return localStorage.getItem(WALLET_SESSION_KEY) === '1'; } catch { return false; }
 }

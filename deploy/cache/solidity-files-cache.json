@@ -1,0 +1,113 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/home/eshan/workdump/zkai/deploy/contracts/AttestationRegistry.sol": {
+      "lastModificationDate": 1776488995419,
+      "contentHash": "e141bec5f6ceb0b93da16dc12fa18242",
+      "sourceName": "contracts/AttestationRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "AttestationRegistry"
+      ]
+    },
+    "/home/eshan/workdump/zkai/deploy/contracts/PaymentEscrow.sol": {
+      "lastModificationDate": 1776488995419,
+      "contentHash": "ebfc15b604da0bf81e78f446476e6a98",
+      "sourceName": "contracts/PaymentEscrow.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "PaymentEscrow"
+      ]
+    },
+    "/home/eshan/workdump/zkai/deploy/contracts/ProviderRegistry.sol": {
+      "lastModificationDate": 1776488995422,
+      "contentHash": "fe94f699e6da2ddb1253b4fde89b5217",
+      "sourceName": "contracts/ProviderRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "ProviderRegistry"
+      ]
+    }
+  }
+}

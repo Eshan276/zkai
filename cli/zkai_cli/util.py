@@ -105,10 +105,6 @@ def deploy_dir(repo: Path) -> Path:
     return repo / "deploy"
 
 
-def seed_path(repo: Path) -> Path:
-    return deploy_dir(repo) / ".seed"
-
-
 def env_file(repo: Path) -> Path:
     return compose_dir(repo) / ".env"
 

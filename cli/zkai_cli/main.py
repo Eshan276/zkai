@@ -2,8 +2,7 @@
 zkai CLI — provider node management tool.
 
 Commands:
-  zkai init          Guided first-time setup (wallet, seed, API keys)
-  zkai keygen        Generate a new Midnight wallet keypair
+  zkai init          Guided first-time setup (EVM key, .env, relay config)
   zkai start         Start enclave + bridge (docker compose up -d)
   zkai stop          Stop all containers
   zkai restart       Restart containers
@@ -12,7 +11,7 @@ Commands:
   zkai register      Register provider on-chain (one-time)
   zkai deregister    Remove provider from on-chain registry
   zkai keys          Show how API keys work (managed via dashboard)
-  zkai info          Print provider ID, endpoint, pubkey
+  zkai info          Print provider ID, endpoint, address
 """
 
 import typer
@@ -41,14 +40,8 @@ def init(
         help="Path to the zkai repo root (auto-detected if omitted)",
     ),
 ):
-    """Guided first-time setup: wallet, seed, API keys, .env."""
+    """Guided first-time setup: EVM private key, relay config, provider/.env."""
     _setup.run_init(repo_dir)
-
-
-@app.command()
-def keygen():
-    """Generate a new Midnight wallet (seed + addresses). Does NOT save automatically."""
-    _setup.run_keygen()
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -108,7 +101,7 @@ def register(
     model: str = typer.Option("qwen2.5-1.5b", "--model", "-m", help="Model name to advertise"),
     price: int = typer.Option(100, "--price", "-p", help="Price per request in tNIGHT units"),
 ):
-    """Register this provider on the Midnight chain (run once after first start)."""
+    """Register this provider on the 0G chain (run once after first start)."""
     _register.register(repo_dir, endpoint=endpoint, model=model, price=price)
 
 

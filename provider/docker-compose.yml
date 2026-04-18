@@ -1,50 +1,34 @@
 services:
-  proof-server:
-    image: midnightnetwork/proof-server:latest
-    container_name: zkai-proof-server
-    ports:
-      - "6300:6300"
-    environment:
-      - PORT=6300
-    volumes:
-      - proof_server_keys:/.cache/midnight/zk-params
-    restart: unless-stopped
-
   bridge:
     image: node:22-alpine
     container_name: zkai-bridge
     working_dir: /app
     volumes:
       - ../bridge:/app
-      - ../deploy/compiled:/app/compiled
-      - ../deploy/.seed:/deploy/.seed:ro
-      - ../deploy/.bridge-seed:/deploy/.bridge-seed:ro
-      - bridge_leveldb:/app/midnight-level-db
+      - ../deploy/deployment.json:/app/deployment.json:ro
+      - ../deploy/abis:/app/abis:ro
+      - bridge_data:/app/data
     environment:
       - BRIDGE_PORT=7300
-      - PROOF_SERVER_URL=http://proof-server:6300
+      - ZKAI_PRIVATE_KEY=${ZKAI_PRIVATE_KEY}
+      - OG_RPC_URL=${OG_RPC_URL:-https://evmrpc-testnet.0g.ai}
       - ZKAI_AUTH_URL=${ZKAI_AUTH_URL:-https://zkai.vercel.app}
-      - REGISTRY_CONTRACT=${REGISTRY_CONTRACT:-70f8c6b8661f687631165f333b1e5bd53919ce2ba03e029dc112c5e4f09c657e}
-      - ESCROW_CONTRACT=${ESCROW_CONTRACT:-c7bcfc56772be622e5e31e8cd84b53f1a4fb259568de7f94ae3c9d6a10dd44d4}
-      - ATTESTATION_CONTRACT=${ATTESTATION_CONTRACT:-9dfc5a38a7c8dca27fdfcec4360a66991b491947f48761fc8454a52717f6ff6a}
+      - REGISTRY_CONTRACT=${REGISTRY_CONTRACT:-}
+      - ESCROW_CONTRACT=${ESCROW_CONTRACT:-}
+      - ATTESTATION_CONTRACT=${ATTESTATION_CONTRACT:-}
     ports:
       - "7300:7300"
     command: >
       sh -c "
         npm install --silent &&
-        echo 'Waiting for proof server on proof-server:6300...' &&
-        until nc -z proof-server 6300 2>/dev/null; do sleep 2; done &&
-        echo 'Proof server ready.' &&
         npx tsx src/server.ts
       "
-    depends_on:
-      - proof-server
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7300/health"]
       interval: 10s
       timeout: 5s
-      retries: 30
-      start_period: 300s  # wallet sync can take up to 5 min
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   enclave:
@@ -71,10 +55,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Cloudflare tunnel removed — providers now connect to the Fly.io relay
-  # instead of needing a public URL. Set ZKAI_RELAY_URL in .env.
-
 volumes:
   ollama_models:
-  bridge_leveldb:
-  proof_server_keys:
+  bridge_data:

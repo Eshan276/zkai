@@ -1,43 +1,48 @@
 'use client';
 
 /**
- * Browser-side escrow deposit/withdraw via Lace wallet.
+ * Browser-side escrow deposit/withdraw via MetaMask + 0G chain.
  *
  * Flow:
- *  1. Get coin/enc public keys from Lace
- *  2. POST to /api/escrow/build-tx — server builds + proves the tx via centralized proof server (VPC)
- *  3. connectedAPI.balanceUnsealedTransaction(txHex) — Lace adds inputs, user approves
- *  4. connectedAPI.submitTransaction(balanced.tx) — submitted from user's wallet
+ *  1. Get signer from MetaMask
+ *  2. Call PaymentEscrow contract directly with ethers.js
+ *  3. User approves tx in MetaMask
  */
 
-import type { ConnectedAPI } from '@midnight-ntwrk/dapp-connector-api';
+import { ethers } from 'ethers';
+import { CONTRACTS } from './contracts';
+
+const PAYMENT_ESCROW_ABI = [
+  { type: 'function', name: 'deposit', inputs: [], outputs: [], stateMutability: 'payable' },
+  { type: 'function', name: 'withdraw', inputs: [{ name: 'amount', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'balance', inputs: [{ name: '', type: 'address' }], outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view' },
+];
 
 export type EscrowAction = 'deposit' | 'withdraw';
 
 export async function callEscrow(
-  connectedAPI: ConnectedAPI,
+  provider: ethers.BrowserProvider,
   action: EscrowAction,
   amount: bigint,
-): Promise<void> {
-  // Step 1: Get keys from Lace
-  const shieldedRaw = await connectedAPI.getShieldedAddresses();
-  const coinPublicKey: string = (shieldedRaw as any).shieldedCoinPublicKey;
-  const encPublicKey: string = (shieldedRaw as any).shieldedEncryptionPublicKey;
+): Promise<string> {
+  const signer = await provider.getSigner();
+  const contract = new ethers.Contract(CONTRACTS.PaymentEscrow, PAYMENT_ESCROW_ABI, signer);
 
-  // Step 2: Server builds + proves the tx (proof server in VPC)
-  const res = await fetch('/api/escrow/build-tx', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, amount: amount.toString(), coinPublicKey, encPublicKey }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Failed to build transaction');
+  let tx: ethers.TransactionResponse;
+  if (action === 'deposit') {
+    tx = await contract.deposit({ value: amount });
+  } else {
+    tx = await contract.withdraw(amount);
+  }
 
-  const txHex: string = data.tx;
+  const receipt = await tx.wait();
+  return receipt?.hash ?? tx.hash;
+}
 
-  // Step 3: Lace balances the tx — user approves in Lace UI
-  const { tx: balancedTx } = await connectedAPI.balanceUnsealedTransaction(txHex);
-
-  // Step 4: Submit from user's wallet
-  await connectedAPI.submitTransaction(balancedTx);
+export async function getEscrowBalance(
+  provider: ethers.BrowserProvider,
+  address: string,
+): Promise<bigint> {
+  const contract = new ethers.Contract(CONTRACTS.PaymentEscrow, PAYMENT_ESCROW_ABI, provider);
+  return contract.balance(address);
 }

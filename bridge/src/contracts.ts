@@ -1,16 +1,14 @@
 /**
- * Contract interaction layer.
- * Loads compiled contracts, finds deployed instances, calls circuits.
+ * Contract interaction layer — ethers.js calls to 0G chain EVM contracts.
  */
 
-import * as path from 'node:path';
+import { ethers } from 'ethers';
 import * as fs from 'node:fs';
-import { createHash } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
-import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
-import { CompiledContract } from '@midnight-ntwrk/compact-js';
-import { encodeCoinPublicKey } from '@midnight-ntwrk/ledger-v8';
-import { compiledDir, createProviders, getWalletContext, getProviderUnshieldedAddress } from './wallet.js';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getWallet, getProviderAddress } from './wallet.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Load deployment addresses — prefer env vars (Docker), fall back to deployment.json
 function loadAddresses() {
@@ -24,9 +22,9 @@ function loadAddresses() {
   }
   const deploymentPath = fs.existsSync('/app/deployment.json')
     ? '/app/deployment.json'
-    : path.resolve(compiledDir, '..', 'deployment.json');
+    : path.resolve(__dirname, '..', '..', 'deploy', 'deployment.json');
   if (!fs.existsSync(deploymentPath)) {
-    throw new Error(`deployment.json not found and no REGISTRY_CONTRACT env var set. Run deploy first.`);
+    throw new Error('deployment.json not found and no REGISTRY_CONTRACT env var set. Run deploy first.');
   }
   const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf-8'));
   console.log('[contracts] loaded deployment from:', deploymentPath);
@@ -37,110 +35,87 @@ function loadAddresses() {
   };
 }
 
+function loadAbi(name: string) {
+  const abiPath = fs.existsSync(`/app/abis/${name}.json`)
+    ? `/app/abis/${name}.json`
+    : path.resolve(__dirname, '..', '..', 'deploy', 'abis', `${name}.json`);
+  return JSON.parse(fs.readFileSync(abiPath, 'utf-8'));
+}
+
 export const ADDRESSES = loadAddresses();
 console.log('[contracts] ProviderRegistry:', ADDRESSES.ProviderRegistry);
 
-async function loadCompiledContract(name: string) {
-  const contractPath = path.join(compiledDir, name, 'contract', 'index.js');
-  const mod = await import(pathToFileURL(contractPath).href);
-  return CompiledContract.make(name.toLowerCase(), mod.Contract).pipe(
-    CompiledContract.withVacantWitnesses,
-    CompiledContract.withCompiledFileAssets(path.join(compiledDir, name)),
-  );
+function escrowContract() {
+  return new ethers.Contract(ADDRESSES.PaymentEscrow, loadAbi('PaymentEscrow'), getWallet());
 }
 
-async function callCircuit(
-  contractName: 'ProviderRegistry' | 'PaymentEscrow' | 'AttestationRegistry',
-  circuitId: string,
-  args: unknown[],
-) {
-  const walletCtx = await getWalletContext();
-  const zkConfigPath = path.join(compiledDir, contractName);
-  const providers = await createProviders(walletCtx, zkConfigPath);
-  const compiledContract = await loadCompiledContract(contractName);
+function registryContract() {
+  return new ethers.Contract(ADDRESSES.ProviderRegistry, loadAbi('ProviderRegistry'), getWallet());
+}
 
-  const addr = ADDRESSES[contractName];
-  console.log(`[contracts] using address for ${contractName}: "${addr}" (type: ${typeof addr})`);
-  const found = await findDeployedContract(providers, {
-    compiledContract,
-    contractAddress: addr,
-    privateStateId: `${contractName.toLowerCase()}-bridge-state`,
-    initialPrivateState: {},
-  });
-
-  try {
-    await found.callTx[circuitId](...args);
-    return 'submitted';
-  } catch (e: any) {
-    console.error(`[contracts] callCircuit ${contractName}.${circuitId} failed:`, e?.message ?? e);
-    console.error('[contracts] cause:', e?.cause?.message ?? e?.cause ?? '(none)');
-    console.error('[contracts] stack:', e?.stack?.slice(0, 3000));
-    throw e;
-  }
+function attestationContract() {
+  return new ethers.Contract(ADDRESSES.AttestationRegistry, loadAbi('AttestationRegistry'), getWallet());
 }
 
 // ── ProviderRegistry ───────────────────────────────────────────────────────
 
 export async function registerProvider(
-  providerId: string,
-  pubkey: string,
+  _providerId: string,
+  _pubkey: string,
   endpoint: string,
   model: string,
   price: string,
 ): Promise<string> {
-  return callCircuit('ProviderRegistry', 'registerProvider', [
-    Buffer.from(providerId, 'hex'),
-    Buffer.from(pubkey, 'hex'),
-    endpoint,
-    model,
-    BigInt(price),
-  ]);
+  const tx = await registryContract().register(endpoint, model, BigInt(price));
+  const receipt = await tx.wait();
+  console.log('[contracts] registerProvider tx:', receipt.hash);
+  return receipt.hash;
 }
 
-export async function deregisterProvider(providerId: string): Promise<string> {
-  return callCircuit('ProviderRegistry', 'deregisterProvider', [
-    Buffer.from(providerId, 'hex'),
-  ]);
+export async function deregisterProvider(_providerId: string): Promise<string> {
+  const tx = await registryContract().deregister();
+  const receipt = await tx.wait();
+  console.log('[contracts] deregisterProvider tx:', receipt.hash);
+  return receipt.hash;
 }
 
 // ── PaymentEscrow ──────────────────────────────────────────────────────────
 
-function toBytes32(hex: string): Buffer {
-  // Ensure exactly 32 bytes for Compact Bytes<32>
-  const clean = hex.replace(/^0x/, '');
-  if (/^[0-9a-fA-F]{64}$/.test(clean)) {
-    return Buffer.from(clean, 'hex');
-  }
-  // Not a valid 32-byte hex — SHA256 hash it to a deterministic 32 bytes
-  return createHash('sha256').update(hex).digest();
-}
-
 export async function deposit(amount: string): Promise<string> {
-  return callCircuit('PaymentEscrow', 'deposit', [BigInt(amount)]);
+  const tx = await escrowContract().deposit({ value: BigInt(amount) });
+  const receipt = await tx.wait();
+  console.log('[contracts] deposit tx:', receipt.hash);
+  return receipt.hash;
 }
 
 export async function deductBalance(
-  coinPublicKey: string,
+  walletAddr: string,
   providerId: string,
   jobId: string,
   amount: string,
 ): Promise<string> {
-  // coinPublicKey is a bech32 CoinPublicKey string from Lace — must use
-  // encodeCoinPublicKey to get the same bytes the deposit circuit stored
-  const walletKeyBytes = Buffer.from(encodeCoinPublicKey(coinPublicKey));
-  // provider_address: bridge's unshielded public key — receives tNIGHT payment
-  const providerAddrBytes = Buffer.from(getProviderUnshieldedAddress(), 'hex');
-  return callCircuit('PaymentEscrow', 'deductBalance', [
-    walletKeyBytes,
-    toBytes32(providerId),
-    toBytes32(jobId),
+  // walletAddr: consumer EVM address (0x...)
+  // providerId: provider EVM address (0x...) or use bridge's own address as fallback
+  const providerAddr = providerId && ethers.isAddress(providerId)
+    ? providerId
+    : getProviderAddress();
+  const jobIdBytes = ethers.id(jobId); // keccak256 → bytes32
+  const tx = await escrowContract().deductBalance(
+    walletAddr,
+    providerAddr,
+    jobIdBytes,
     BigInt(amount),
-    providerAddrBytes,
-  ]);
+  );
+  const receipt = await tx.wait();
+  console.log('[contracts] deductBalance tx:', receipt.hash);
+  return receipt.hash;
 }
 
 export async function withdraw(amount: string): Promise<string> {
-  return callCircuit('PaymentEscrow', 'withdraw', [BigInt(amount)]);
+  const tx = await escrowContract().withdraw(BigInt(amount));
+  const receipt = await tx.wait();
+  console.log('[contracts] withdraw tx:', receipt.hash);
+  return receipt.hash;
 }
 
 // ── AttestationRegistry ────────────────────────────────────────────────────
@@ -148,11 +123,14 @@ export async function withdraw(amount: string): Promise<string> {
 export async function postAttestation(
   jobId: string,
   attestationHash: string,
-  modelHash: string,
+  _modelHash: string,
 ): Promise<string> {
-  return callCircuit('AttestationRegistry', 'postAttestation', [
-    Buffer.from(jobId, 'hex'),
-    Buffer.from(attestationHash, 'hex'),
-    Buffer.from(/^[0-9a-fA-F]{64}$/.test(modelHash) ? modelHash : '0'.repeat(64), 'hex'),
-  ]);
+  const jobIdBytes = ethers.id(jobId); // keccak256 → bytes32
+  // attestationHash: hex string → pad/truncate to 32 bytes
+  const cleanHash = attestationHash.replace(/^0x/, '');
+  const hashBytes32 = '0x' + cleanHash.padEnd(64, '0').slice(0, 64);
+  const tx = await attestationContract().postAttestation(jobIdBytes, hashBytes32);
+  const receipt = await tx.wait();
+  console.log('[contracts] postAttestation tx:', receipt.hash);
+  return receipt.hash;
 }

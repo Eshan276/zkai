@@ -1,7 +1,7 @@
 """
-zkai register   — register provider on Midnight chain
+zkai register   — register provider on 0G chain
 zkai deregister — remove provider from registry
-zkai info       — print provider ID, pubkey, endpoint
+zkai info       — print provider ID, endpoint
 """
 
 import hashlib
@@ -16,8 +16,8 @@ from rich.prompt import Prompt, Confirm
 
 from zkai_cli.util import (
     console, err_console,
-    compose_dir, deploy_dir, find_repo_root,
-    require_docker, stream, read_env_file,
+    compose_dir, find_repo_root,
+    require_docker, read_env_file,
 )
 
 _PROVIDER_ID_FILE = ".provider_id"
@@ -40,27 +40,29 @@ def register(
     require_docker()
     repo = find_repo_root(repo_dir)
 
-    # Resolve relay URL: CLI env var > provider/.env > prompt
     relay_url = _RELAY_URL
     if not relay_url:
         env = read_env_file(repo)
         relay_url = env.get("ZKAI_RELAY_URL", "").rstrip("/")
     auth_url = _AUTH_URL or read_env_file(repo).get("ZKAI_AUTH_URL", "").rstrip("/")
 
-    # Check bridge is up and synced
+    # Check bridge is up
     _wait_for_bridge()
 
-    # Get TEE pubkey from local enclave
-    console.print("[bold]Fetching TEE pubkey from enclave...[/bold]")
-    pubkey = _get_enclave_pubkey()
-    console.print(f"  pubkey: {pubkey[:16]}...{pubkey[-8:]}")
+    # Get bridge's EVM address (this IS the provider ID on 0G chain)
+    console.print("[bold]Fetching provider address from bridge...[/bold]")
+    provider_id = _get_bridge_address()
+    console.print(f"  provider address (0G): {provider_id}")
 
-    # Generate a unique provider_id per registration = sha256(pubkey + timestamp)
-    # This avoids the contract bug where deregistered IDs can't be reused
-    provider_id = hashlib.sha256((pubkey + str(int(time.time()))).encode()).hexdigest()
-    console.print(f"  provider_id: {provider_id}")
+    # Get TEE pubkey from enclave (for info purposes)
+    pubkey = ""
+    try:
+        pubkey = _get_enclave_pubkey()
+        console.print(f"  TEE pubkey: {pubkey[:16]}...{pubkey[-8:]}")
+    except Exception:
+        console.print("  [dim]Enclave not reachable — skipping pubkey check[/dim]")
 
-    # Endpoint — auto-fill from relay if configured
+    # Endpoint
     if not endpoint:
         if relay_url:
             endpoint = f"{relay_url}/relay/{provider_id}"
@@ -74,9 +76,9 @@ def register(
     console.print(f"\n[bold]Registering...[/bold]")
     console.print(f"  endpoint: {endpoint}")
     console.print(f"  model:    {model}")
-    console.print(f"  price:    {price} tNIGHT/req")
+    console.print(f"  price:    {price} A0GI/req")
 
-    # Fetch hardware info from enclave
+    # Fetch hardware info
     hardware = None
     try:
         hw_resp = requests.get(f"{_ENCLAVE_URL}/health", timeout=5)
@@ -85,7 +87,7 @@ def register(
     except Exception:
         pass
 
-    # Register in central DB first — this is what actually routes traffic
+    # Register in central gateway DB
     tx_id = "pending"
     if auth_url:
         try:
@@ -101,30 +103,29 @@ def register(
         except Exception as e:
             console.print(f"  [yellow]Warning: could not reach gateway ({e})[/yellow]")
 
-    # Submit on-chain tx in background (non-blocking)
-    console.print("  Submitting on-chain tx (background)...")
-    pubkey_padded = pubkey.zfill(64)
+    # Submit on-chain tx via bridge
+    console.print("  Submitting on-chain tx...")
     try:
         resp = requests.post(
             f"{_BRIDGE_URL}/registry/register-provider",
             json={
-                "provider_id": provider_id,
-                "pubkey": pubkey_padded,
                 "endpoint": endpoint,
                 "model": model,
                 "price": str(price),
             },
-            timeout=300,
+            timeout=120,
         )
         if resp.ok:
-            tx_id = resp.json().get("tx_id", "submitted")
-            console.print("  [green]On-chain tx submitted[/green]")
+            result = resp.json()
+            tx_id = result.get("tx_id", "submitted")
+            provider_id = result.get("provider_id", provider_id)
+            console.print(f"  [green]On-chain tx: {tx_id[:20]}...[/green]")
         else:
             console.print(f"  [yellow]On-chain tx failed (gateway registration still active): {resp.text[:80]}[/yellow]")
     except Exception as e:
-        console.print(f"  [yellow]On-chain tx timed out (gateway registration still active)[/yellow]")
+        console.print(f"  [yellow]On-chain tx error: {e}[/yellow]")
 
-    # Save provider_id locally
+    # Save provider info locally
     pid_file = compose_dir(repo) / _PROVIDER_ID_FILE
     pid_file.write_text(json.dumps({
         "provider_id": provider_id,
@@ -140,7 +141,7 @@ def register(
         f"  Provider ID: {provider_id}\n"
         f"  Endpoint:    {endpoint}\n\n"
         f"Saved to [dim]{pid_file}[/dim]\n"
-        f"Your node is now discoverable by consumers on the Midnight registry.",
+        f"Your node is now discoverable by consumers on the 0G registry.",
         border_style="green",
     ))
 
@@ -162,7 +163,7 @@ def deregister(repo_dir: str | None):
     resp = requests.post(
         f"{_BRIDGE_URL}/registry/deregister-provider",
         json={"provider_id": provider_id},
-        timeout=120,
+        timeout=60,
     )
 
     if not resp.ok:
@@ -170,7 +171,6 @@ def deregister(repo_dir: str | None):
         err_console.print(f"[red]Deregistration failed:[/red] {data.get('error', resp.text)}")
         raise typer.Exit(1)
 
-    # Remove from central DB
     env = read_env_file(repo)
     auth_url = _AUTH_URL or env.get("ZKAI_AUTH_URL", "").rstrip("/")
     if auth_url:
@@ -199,40 +199,37 @@ def info(repo_dir: str | None):
 
     data = json.loads(pid_file.read_text())
     console.print()
-    console.print(f"  [bold]Provider ID:[/bold] {data.get('provider_id', '?')}")
-    console.print(f"  [bold]Pubkey:[/bold]      {data.get('pubkey', '?')}")
-    console.print(f"  [bold]Endpoint:[/bold]    {data.get('endpoint', '?')}")
-    console.print(f"  [bold]Model:[/bold]       {data.get('model', '?')}")
-    console.print(f"  [bold]Price:[/bold]       {data.get('price', '?')} tNIGHT/req")
+    console.print(f"  [bold]Provider ID (0G):[/bold] {data.get('provider_id', '?')}")
+    console.print(f"  [bold]TEE Pubkey:[/bold]      {data.get('pubkey', '?')}")
+    console.print(f"  [bold]Endpoint:[/bold]        {data.get('endpoint', '?')}")
+    console.print(f"  [bold]Model:[/bold]           {data.get('model', '?')}")
+    console.print(f"  [bold]Price:[/bold]           {data.get('price', '?')} A0GI/req")
     console.print()
-
-    # Live pubkey check
-    try:
-        live_pk = _get_enclave_pubkey()
-        if live_pk == data.get("pubkey"):
-            console.print("[green]Enclave pubkey matches registered pubkey.[/green]")
-        else:
-            console.print("[yellow]Warning: enclave pubkey has changed since registration.[/yellow]")
-            console.print("Run [bold]zkai register[/bold] again to update the on-chain entry.")
-    except Exception:
-        console.print("[dim]Enclave not reachable — can't verify pubkey.[/dim]")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _get_enclave_pubkey() -> str:
+def _get_bridge_address() -> str:
     try:
-        r = requests.get(f"{_ENCLAVE_URL}/pubkey", timeout=10)
+        r = requests.get(f"{_BRIDGE_URL}/health", timeout=10)
         r.raise_for_status()
-        return r.json()["pubkey"]
+        addr = r.json().get("address")
+        if not addr:
+            raise ValueError("No address in bridge health response")
+        return addr
     except Exception as e:
-        err_console.print(f"[red]Cannot reach enclave at {_ENCLAVE_URL}/pubkey:[/red] {e}")
-        err_console.print("Make sure the enclave is running: [bold]zkai start[/bold]")
+        err_console.print(f"[red]Cannot reach bridge at {_BRIDGE_URL}/health:[/red] {e}")
+        err_console.print("Make sure the bridge is running: [bold]zkai start[/bold]")
         raise typer.Exit(1)
 
 
+def _get_enclave_pubkey() -> str:
+    r = requests.get(f"{_ENCLAVE_URL}/pubkey", timeout=10)
+    r.raise_for_status()
+    return r.json()["pubkey"]
+
+
 def _wait_for_bridge(timeout: int = 30):
-    """Wait for bridge to be up and synced (up to timeout seconds)."""
     console.print("[bold]Checking bridge...[/bold]", end=" ")
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -240,19 +237,15 @@ def _wait_for_bridge(timeout: int = 30):
             r = requests.get(f"{_BRIDGE_URL}/health", timeout=3)
             data = r.json()
             if data.get("synced"):
-                console.print("[green]synced[/green]")
+                console.print("[green]ready[/green]")
                 return
-            else:
-                console.print("[yellow]wallet not yet synced — waiting...[/yellow]")
-                time.sleep(5)
-                continue
         except Exception:
             pass
-        time.sleep(3)
+        time.sleep(2)
         console.print(".", end="", flush=True)
 
-    err_console.print(f"\n[red]Bridge not reachable or not synced after {timeout}s.[/red]")
-    err_console.print("Run [bold]zkai logs bridge[/bold] to diagnose. Wallet sync can take 2-5 min.")
+    err_console.print(f"\n[red]Bridge not reachable after {timeout}s.[/red]")
+    err_console.print("Run [bold]zkai logs bridge[/bold] to diagnose.")
     raise typer.Exit(1)
 
 
@@ -260,7 +253,7 @@ def _load_provider_id(pid_file: Path) -> str:
     if not pid_file.exists():
         err_console.print(
             "[red]No provider_id found.[/red] "
-            "Run [bold]zkai register[/bold] first, or set --provider-id."
+            "Run [bold]zkai register[/bold] first."
         )
         raise typer.Exit(1)
     return json.loads(pid_file.read_text())["provider_id"]
